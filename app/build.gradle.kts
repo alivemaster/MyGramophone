@@ -59,6 +59,9 @@ android {
 
     androidResources {
         generateLocaleConfig = true
+        // Library modules also ship translations. Keep only the locales this
+        // fork supports so any other system language falls back to English.
+        localeFilters.addAll(listOf("en", "ja", "zh-rCN", "zh-rTW"))
     }
 
     buildFeatures {

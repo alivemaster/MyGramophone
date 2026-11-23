@@ -172,7 +172,7 @@ class BugHandlerActivity : BaseActivity() {
         actionShare.setOnClickListener {
             val sendIntent = Intent().apply {
                 action = Intent.ACTION_SEND
-                putExtra(Intent.EXTRA_TITLE, "Gramophone Logs")
+                putExtra(Intent.EXTRA_TITLE, "MyGramophone Logs")
                 putExtra(Intent.EXTRA_TEXT, bugText.text)
                 type = "text/plain"
             }
@@ -207,7 +207,7 @@ class BugHandlerActivity : BaseActivity() {
         val f: File
         try {
             crashLogDir = File(cacheDir, "CrashLog")
-            f = File(crashLogDir, "GramophoneLog${System.currentTimeMillis()}.txt")
+            f = File(crashLogDir, "MyGramophoneLog${System.currentTimeMillis()}.txt")
         } finally {
             StrictMode.setThreadPolicy(policy)
         }
@@ -221,7 +221,7 @@ class BugHandlerActivity : BaseActivity() {
                     R.id.editText
                 ) as TextInputEditText
                 val desc = et.editableText.toString().takeIf { it.isNotBlank() }
-                val mailText = "Hi Nick,\n\nGramophone crashed!\nI was doing:\n\n" +
+                val mailText = "Hi Nick,\n\nMyGramophone crashed!\nI was doing:\n\n" +
                         "${desc ?: "--INSERT DESCRIPTION HERE--"}\n\nIt crashed with this" +
                         " log:\n\n\n$log"
                 triedToSendEmail = true
@@ -256,7 +256,7 @@ class BugHandlerActivity : BaseActivity() {
                                 putExtra(Intent.EXTRA_EMAIL, arrayOf("nift4@posteo.net"))
                                 putExtra(
                                     Intent.EXTRA_SUBJECT,
-                                    "Gramophone ${BuildConfig.MY_VERSION_NAME} crashed"
+                                    "MyGramophone ${BuildConfig.MY_VERSION_NAME} crashed"
                                 )
                                 putExtra(Intent.EXTRA_TEXT, mailText)
                                 putExtra(
