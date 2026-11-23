@@ -63,6 +63,13 @@
         android:title="@string/settings_player_options" />
 
     <Preference
+        android:icon="@drawable/ic_extension"
+        android:key="mygomusic_plugin_settings"
+        android:layout="@layout/preference_basic"
+        android:summary="@string/mygomusic_plugin_settings_summary"
+        android:title="@string/mygomusic_plugin_settings" />
+
+    <Preference
         android:icon="@drawable/ic_experiment"
         android:key="experimental"
         android:layout="@layout/preference_basic"

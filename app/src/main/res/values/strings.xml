@@ -245,6 +245,24 @@
     <string name="settings_experimental_settings">Experimental</string>
     <!-- Settings category about experimental features. Subtext -->
     <string name="settings_experimental_settings_summary">Testing features, misc</string>
+    <!-- Settings category for mygo-music plugins. Title -->
+    <string name="mygomusic_plugin_settings">MyGo Music plugins</string>
+    <!-- Settings category for mygo-music plugins. Subtext -->
+    <string name="mygomusic_plugin_settings_summary">Plugin support and installed plugins</string>
+    <!-- Toggle that shows plugin tabs on the home screen. Title -->
+    <string name="mygomusic_plugins_title">Enable mygo-music plugin support</string>
+    <!-- Toggle that shows plugin tabs on the home screen. Subtext -->
+    <string name="mygomusic_plugins_summary">While this is off, the home screen stays unchanged and installed plugins are kept</string>
+    <!-- Header above the list of installed mygo-music plugins -->
+    <string name="mygomusic_plugin_list_title">Installed plugins</string>
+    <!-- Shown when no mygo-music plugin is installed -->
+    <string name="mygomusic_plugin_list_empty">No plugins installed</string>
+    <!-- Content description of the button that adds a mygo-music plugin -->
+    <string name="mygomusic_plugin_add">Add plugin</string>
+    <!-- Menu item for installing a plugin from a local file or folder -->
+    <string name="mygomusic_plugin_add_local">Local file or folder</string>
+    <!-- Menu item for installing a plugin from a GitHub repository -->
+    <string name="mygomusic_plugin_add_github">GitHub repository</string>
     <!-- Toggle which makes color detection for album cover based color use more CPU to detect the
     color, which improves accuracy but causes some lags on old devices. Subtext -->
     <string name="settings_color_accuracy_summary">Make color generation accurate</string>

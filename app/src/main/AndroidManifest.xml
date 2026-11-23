@@ -316,6 +316,10 @@
             android:exported="false" />
 
         <activity
+            android:name=".mygomusic.PluginListActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".ui.fragments.settings.ContributorsSettingsActivity"
             android:exported="false" />
 

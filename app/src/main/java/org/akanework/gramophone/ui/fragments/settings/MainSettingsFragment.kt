@@ -20,6 +20,7 @@ package org.akanework.gramophone.ui.fragments.settings
 import android.os.Bundle
 import androidx.preference.Preference
 import org.akanework.gramophone.R
+import org.akanework.gramophone.mygomusic.PluginListActivity
 import org.akanework.gramophone.ui.fragments.BasePreferenceFragment
 import org.akanework.gramophone.ui.fragments.BaseSettingsActivity
 
@@ -52,6 +53,10 @@ class MainSettingsFragment : BasePreferenceFragment() {
 
             "audio" -> {
                 startActivity(AudioSettingsActivity::class.java)
+            }
+
+            "mygomusic_plugin_settings" -> {
+                startActivity(PluginListActivity::class.java)
             }
 
             "experimental" -> {

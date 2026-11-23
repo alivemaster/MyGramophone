@@ -106,6 +106,15 @@
     <string name="settings_color_accuracy">颜色准确度</string>
     <string name="settings_color_accuracy_summary">提高颜色生成的准确度</string>
     <string name="settings_experimental_settings_summary">测试功能、其他</string>
+    <string name="mygomusic_plugin_settings">MyGo Music插件设置</string>
+    <string name="mygomusic_plugin_settings_summary">插件支持与已安装的插件</string>
+    <string name="mygomusic_plugins_title">启用 mygo-music 插件支持</string>
+    <string name="mygomusic_plugins_summary">关闭时主界面保持不变，已安装的插件仍会保留</string>
+    <string name="mygomusic_plugin_list_title">已安装的插件</string>
+    <string name="mygomusic_plugin_list_empty">还没有安装插件</string>
+    <string name="mygomusic_plugin_add">添加插件</string>
+    <string name="mygomusic_plugin_add_local">本机文件或文件夹</string>
+    <string name="mygomusic_plugin_add_github">GitHub 仓库</string>
     <string name="sort_by_add_date">添加日期</string>
     <string name="sort_by_modified_date">修改日期</string>
     <string name="settings_lyric">歌词</string>
