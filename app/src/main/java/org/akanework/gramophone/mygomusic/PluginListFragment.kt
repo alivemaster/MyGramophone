@@ -22,7 +22,9 @@ import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.inputmethod.EditorInfo
 import android.widget.CheckBox
+import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.widget.PopupMenu
@@ -30,6 +32,7 @@ import androidx.core.os.ConfigurationCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updateLayoutParams
+import androidx.core.widget.addTextChangedListener
 import androidx.fragment.app.viewModels
 import androidx.preference.Preference
 import androidx.preference.PreferenceCategory
@@ -37,6 +40,8 @@ import androidx.preference.PreferenceViewHolder
 import androidx.preference.SwitchPreferenceCompat
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.floatingactionbutton.FloatingActionButton
+import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textfield.TextInputLayout
 import org.akanework.gramophone.R
 import org.akanework.gramophone.logic.allowDiskAccessInStrictMode
 import org.akanework.gramophone.logic.dpToPx
@@ -59,6 +64,7 @@ class PluginListFragment : BasePreferenceFragment() {
     private var progressDialog: AlertDialog? = null
     private var confirmDialog: AlertDialog? = null
     private var failureDialog: AlertDialog? = null
+    private var githubDialog: AlertDialog? = null
     private var rendered: List<InstalledPlugin>? = null
 
     private val openZip = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
@@ -114,6 +120,9 @@ class PluginListFragment : BasePreferenceFragment() {
         failureDialog?.setOnCancelListener(null)
         failureDialog?.dismiss()
         failureDialog = null
+        githubDialog?.setOnDismissListener(null)
+        githubDialog?.dismiss()
+        githubDialog = null
         rendered = null
         addButton?.let { button ->
             button.setOnClickListener(null)
@@ -129,6 +138,7 @@ class PluginListFragment : BasePreferenceFragment() {
             if (progressDialog?.isShowing != true) {
                 progressDialog = MaterialAlertDialogBuilder(requireContext())
                     .setMessage(R.string.mygomusic_plugin_working)
+                    .setView(R.layout.mygomusic_plugin_working)
                     .setCancelable(false)
                     .show()
             }
@@ -144,7 +154,7 @@ class PluginListFragment : BasePreferenceFragment() {
         } else if (confirmDialog?.isShowing != true) {
             confirmDialog = MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.mygomusic_plugin_install_title)
-                .setMessage(confirmText(manifest))
+                .setMessage(confirmText(manifest, ui.confirmRepo))
                 .setPositiveButton(R.string.mygomusic_plugin_install) { _, _ -> model.confirmInstall() }
                 .setNegativeButton(android.R.string.cancel) { _, _ -> model.discardPending() }
                 .setOnCancelListener { model.discardPending() }
@@ -195,11 +205,13 @@ class PluginListFragment : BasePreferenceFragment() {
     }
 
     private fun confirmDelete(plugin: InstalledPlugin) {
-        val check = layoutInflater.inflate(R.layout.mygomusic_plugin_delete_data, null) as CheckBox
+        val form = layoutInflater.inflate(R.layout.mygomusic_plugin_delete_data, null)
+        form.findViewById<TextView>(R.id.mygomusic_plugin_delete_message).text =
+            getString(R.string.mygomusic_plugin_delete_message, plugin.title)
+        val check = form.findViewById<CheckBox>(R.id.mygomusic_plugin_delete_data)
         MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.mygomusic_plugin_delete_title)
-            .setMessage(getString(R.string.mygomusic_plugin_delete_message, plugin.title))
-            .setView(check)
+            .setView(form)
             .setPositiveButton(R.string.delete) { _, _ ->
                 model.delete(plugin.directoryName, check.isChecked)
             }
@@ -207,11 +219,15 @@ class PluginListFragment : BasePreferenceFragment() {
             .show()
     }
 
-    private fun confirmText(manifest: PluginManifest): String = buildString {
+    private fun confirmText(manifest: PluginManifest, repo: String): String = buildString {
         append(manifest.title(locale()))
         if (manifest.version.isNotEmpty()) {
             append('\n')
             append(getString(R.string.mygomusic_plugin_install_version, manifest.version))
+        }
+        if (repo.isNotEmpty()) {
+            append('\n')
+            append(getString(R.string.mygomusic_plugin_install_from, repo))
         }
         append("\n\n")
         when {
@@ -250,6 +266,10 @@ class PluginListFragment : BasePreferenceFragment() {
             PluginFailureKind.AlreadyInstalled ->
                 getString(R.string.mygomusic_plugin_error_installed, error.detail ?: "")
             PluginFailureKind.Io -> getString(R.string.mygomusic_plugin_error_io)
+            PluginFailureKind.BadRepo -> getString(R.string.mygomusic_plugin_error_repo)
+            PluginFailureKind.NoRepo -> getString(R.string.mygomusic_plugin_error_no_repo)
+            PluginFailureKind.RateLimit -> getString(R.string.mygomusic_plugin_error_rate)
+            PluginFailureKind.Github -> getString(R.string.mygomusic_plugin_error_github)
         }
     }
 
@@ -267,13 +287,57 @@ class PluginListFragment : BasePreferenceFragment() {
                 )
             ) { _, which ->
                 when (which) {
-                    // GitHub install is a later step. This entry does not explain that.
-                    0 -> Unit
+                    0 -> askGithub()
                     1 -> allowDiskAccessInStrictMode { openTree.launch(null) }
                     else -> allowDiskAccessInStrictMode { openZip.launch(arrayOf("*/*")) }
                 }
             }
             .show()
+    }
+
+    private fun askGithub() {
+        if (model.ui.value?.busy == true) return
+        val form = layoutInflater.inflate(R.layout.mygomusic_plugin_github, null)
+        val field = form.findViewById<TextInputEditText>(R.id.editText)
+        val box = form.findViewById<TextInputLayout>(R.id.inputLayout)
+        val dialog = MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.mygomusic_plugin_github_title)
+            .setMessage(R.string.mygomusic_plugin_github_hint)
+            .setView(form)
+            .setPositiveButton(R.string.mygomusic_plugin_install, null)
+            .setNegativeButton(android.R.string.cancel, null)
+            .create()
+        dialog.setOnShowListener {
+            val button = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+            button.isEnabled = false
+            field.addTextChangedListener(afterTextChanged = {
+                box.error = null
+                button.isEnabled = !it.isNullOrBlank()
+            })
+            val submit = {
+                try {
+                    val repo = parsePluginRepo(field.text?.toString().orEmpty())
+                    dialog.dismiss()
+                    model.stageGithub(repo)
+                } catch (e: PluginPackageException) {
+                    box.error = failureMessage(e)
+                }
+            }
+            button.setOnClickListener { submit() }
+            field.setOnEditorActionListener { _, actionId, _ ->
+                if (actionId == EditorInfo.IME_ACTION_DONE && button.isEnabled) {
+                    submit()
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+        dialog.setOnDismissListener {
+            if (githubDialog === dialog) githubDialog = null
+        }
+        githubDialog = dialog
+        dialog.show()
     }
 
     private companion object {
@@ -297,10 +361,8 @@ private class InstalledPluginPreference(context: android.content.Context) : Pref
                 setOnMenuItemClickListener { item ->
                     if (item.itemId == R.id.mygomusic_plugin_delete) {
                         onMenu?.invoke()
-                        true
-                    } else {
-                        false
                     }
+                    true
                 }
                 show()
             }

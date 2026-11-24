@@ -17,11 +17,14 @@
 
 package org.akanework.gramophone.mygomusic
 
+import kotlinx.coroutines.runBlocking
 import net.lingala.zip4j.ZipFile
 import net.lingala.zip4j.model.FileHeader
 import net.lingala.zip4j.model.ZipParameters
 import net.lingala.zip4j.util.BitUtils
 import org.json.JSONObject
+import com.sun.net.httpserver.HttpExchange
+import com.sun.net.httpserver.HttpServer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -30,10 +33,13 @@ import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import java.io.Closeable
 import java.io.File
 import java.io.FileOutputStream
+import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.util.Locale
+import java.util.concurrent.Executors
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -262,13 +268,183 @@ class PluginInstallTest {
             val cache = File(root, "cache").apply { mkdirs() }
             installFixture(store, cache, "demo", "1")
             File(storeDir(root, "demo"), ".origin.json").writeText("""{"repo":"owner/demo","version":"9"}""")
-            assertFalse(store.canReplaceWithLocal("demo"))
+            assertFalse(store.canReplace("demo", ""))
             val again = fixture(cache, "demo", "2")
             assertKind(PluginFailureKind.AlreadyInstalled) { store.install(again.root, again.manifest) }
             again.discard()
             assertEquals("owner/demo", store.readOrigin(storeDir(root, "demo")).repo)
         } finally {
             root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun githubInstallReplacesOnlyTheSameRepository() {
+        val root = tempDir()
+        try {
+            val store = PluginStore(root)
+            val cache = File(root, "cache").apply { mkdirs() }
+            val first = fixture(cache, "demo", "1")
+            store.install(first.root, first.manifest, "owner/demo", "v1")
+            first.discard()
+            assertEquals(PluginOrigin("owner/demo", "v1"), store.readOrigin(storeDir(root, "demo")))
+            val again = fixture(cache, "demo", "2")
+            store.install(again.root, again.manifest, "owner/demo", "v2")
+            again.discard()
+            assertEquals("v2", store.readOrigin(storeDir(root, "demo")).version)
+            assertEquals(listOf("demo"), store.list(Locale.ENGLISH).map { it.directoryName })
+            val other = fixture(cache, "demo", "3")
+            assertKind(PluginFailureKind.AlreadyInstalled) {
+                store.install(other.root, other.manifest, "someone/else", "v3")
+            }
+            other.discard()
+            assertEquals("owner/demo", store.readOrigin(storeDir(root, "demo")).repo)
+            assertFalse(store.canReplace("demo", ""))
+            val local = fixture(cache, "demo", "4")
+            assertKind(PluginFailureKind.AlreadyInstalled) { store.install(local.root, local.manifest) }
+            local.discard()
+            assertEquals("v2", store.readOrigin(storeDir(root, "demo")).version)
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun githubInstallDoesNotReplaceALocalPlugin() {
+        val root = tempDir()
+        try {
+            val store = PluginStore(root)
+            val cache = File(root, "cache").apply { mkdirs() }
+            installFixture(store, cache, "demo", "1")
+            assertFalse(store.canReplace("demo", "owner/demo"))
+            val remote = fixture(cache, "demo", "2")
+            assertKind(PluginFailureKind.AlreadyInstalled) {
+                store.install(remote.root, remote.manifest, "owner/demo", "v9")
+            }
+            remote.discard()
+            assertEquals("", store.readOrigin(storeDir(root, "demo")).repo)
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun repositoryTextIsOwnerAndNameOrAGitHubAddress() {
+        val accepted = mapOf(
+            "owner/repo" to "owner/repo",
+            " owner/repo " to "owner/repo",
+            "https://github.com/owner/repo" to "owner/repo",
+            "https://github.com/owner/repo.git" to "owner/repo",
+            "github.com/owner/repo/" to "owner/repo",
+            "https://www.github.com/o-1/r_2.x" to "o-1/r_2.x",
+            "https://github.com/owner/repo/tree/main/src" to "owner/repo",
+            "https://github.com/owner/repo/releases/tag/v1" to "owner/repo",
+            "https://github.com/owner/repo?tab=readme#install" to "owner/repo",
+            "HTTPS://GitHub.com/owner/repo" to "owner/repo",
+            "git@github.com:owner/repo.git" to "owner/repo",
+        )
+        for ((input, want) in accepted) {
+            assertEquals(input, want, parsePluginRepo(input))
+        }
+        for (input in listOf("", "owner", "a/b/c", "https://example.com/a/b", "https://gitlab.com/a/b", "https://github.com/owner", "../x", "a/..")) {
+            assertKind(PluginFailureKind.BadRepo) { parsePluginRepo(input) }
+        }
+    }
+
+    @Test
+    fun portableZipIsPreferredOverAPlatformZip() {
+        assertEquals(2, pickPluginArchive(listOf("x-linux-amd64.zip", "x-darwin-arm64.zip", "x.zip")))
+        assertEquals(0, pickPluginArchive(listOf("plugin.zip", "notes.txt")))
+        assertEquals(1, pickPluginArchive(listOf("plugin-android-arm64.zip", "plugin.zip")))
+        assertEquals(-1, pickPluginArchive(listOf("x-linux-amd64.zip")))
+        assertEquals(-1, pickPluginArchive(listOf("plugin-android-arm64.zip")))
+        assertEquals(-1, pickPluginArchive(listOf("x-darwin-arm64.tar.gz")))
+        assertEquals(-1, pickPluginArchive(emptyList()))
+    }
+
+    @Test
+    fun githubReleaseUsesThePortableZipAndRecordsTheTag() {
+        val cache = tempDir()
+        try {
+            val archive = archiveBytes(cache, "owner-repo-abc/")
+            FakeGithub(
+                tag = "v1.2.0",
+                assets = listOf("plugin-android-arm64.zip", "plugin-darwin-arm64.zip", "plugin.zip"),
+                archive = archive,
+            ).use { github ->
+                val staged = runBlocking {
+                    PluginGithub(github.base).stage("https://github.com/owner/repo/tree/main", cache)
+                }
+                assertEquals("good", staged.manifest.id)
+                assertEquals("owner/repo", staged.repo)
+                assertEquals("v1.2.0", staged.originVersion)
+                assertEquals(listOf("/repos/owner/repo/releases/latest", "/asset/plugin.zip"), github.paths)
+                assertEquals("MyGramophone", github.agents.first())
+                assertEquals("application/vnd.github+json", github.accepts.first())
+                val store = PluginStore(File(cache, "installed"))
+                store.install(staged.root, staged.manifest, staged.repo, staged.originVersion)
+                staged.discard()
+                val origin = JSONObject(File(cache, "installed/plugins/good/.origin.json").readText())
+                assertEquals("owner/repo", origin.getString("repo"))
+                assertEquals("v1.2.0", origin.getString("version"))
+            }
+        } finally {
+            cache.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun platformZipAloneFallsBackToSource() {
+        val cache = tempDir()
+        try {
+            FakeGithub(
+                tag = "v1",
+                assets = listOf("plugin-android-arm64.zip"),
+                archive = archiveBytes(cache, ""),
+            ).use { github ->
+                val staged = runBlocking { PluginGithub(github.base).stage("owner/repo", cache) }
+                staged.discard()
+                assertEquals("v1", staged.originVersion)
+                assertEquals(listOf("/repos/owner/repo/releases/latest", "/zip"), github.paths)
+            }
+        } finally {
+            cache.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun missingReleaseUsesTheLatestCommit() {
+        val cache = tempDir()
+        try {
+            FakeGithub(sha = "0123456789abcdef0123", archive = archiveBytes(cache, "owner-repo-0123/")).use { github ->
+                val staged = runBlocking { PluginGithub(github.base).stage("owner/repo", cache) }
+                staged.discard()
+                assertEquals("0123456789ab", staged.originVersion)
+                assertTrue(github.paths.contains("/repos/owner/repo/commits/HEAD"))
+                assertTrue(github.paths.contains("/repos/owner/repo/zipball/0123456789abcdef0123"))
+            }
+        } finally {
+            cache.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun missingRepositoryAndRateLimitAreDistinct() {
+        val cache = tempDir()
+        try {
+            FakeGithub(archive = byteArrayOf()).use { github ->
+                assertKind(PluginFailureKind.NoRepo) {
+                    runBlocking { PluginGithub(github.base).stage("owner/repo", cache) }
+                }
+            }
+            FakeGithub(archive = byteArrayOf(), releaseCode = 429).use { github ->
+                assertKind(PluginFailureKind.RateLimit) {
+                    runBlocking { PluginGithub(github.base).stage("owner/repo", cache) }
+                }
+                assertEquals(listOf("/repos/owner/repo/releases/latest"), github.paths)
+            }
+        } finally {
+            cache.deleteRecursively()
         }
     }
 
@@ -289,6 +465,18 @@ class PluginInstallTest {
 
     private fun manifest(id: String) =
         """{"id":"$id","name":"$id","version":"1","main":"index.js"}"""
+
+    private fun archiveBytes(dir: File, top: String): ByteArray {
+        val file = File(dir, "archive-${top.replace("/", "")}-${System.nanoTime()}.zip")
+        zipOf(
+            file,
+            mapOf(
+                "${top}plugin.json" to manifest("good"),
+                "${top}index.js" to "export {}",
+            ),
+        )
+        return file.readBytes()
+    }
 
     private fun writePlugin(root: File, json: String) {
         root.mkdirs()
@@ -332,4 +520,76 @@ class PluginInstallTest {
     }
 
     private fun tempDir(): File = Files.createTempDirectory("mygomusic").toFile()
+}
+
+/** One repository on a local GitHub API: a release, or commits when [tag] is empty. */
+private class FakeGithub(
+    private val tag: String = "",
+    private val sha: String = "",
+    private val assets: List<String> = emptyList(),
+    private val archive: ByteArray,
+    private val releaseCode: Int? = null,
+) : Closeable {
+    val paths = mutableListOf<String>()
+    val accepts = mutableListOf<String>()
+    val agents = mutableListOf<String>()
+    private val pool = Executors.newCachedThreadPool()
+    private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+    val base: String
+
+    init {
+        base = "http://127.0.0.1:${server.address.port}"
+        server.executor = pool
+        server.createContext("/") { exchange -> serve(exchange) }
+        server.start()
+    }
+
+    private fun serve(exchange: HttpExchange) {
+        val path = exchange.requestURI.path
+        paths += path
+        accepts += exchange.requestHeaders.getFirst("Accept").orEmpty()
+        agents += exchange.requestHeaders.getFirst("User-Agent").orEmpty()
+        when {
+            path.endsWith("/releases/latest") -> {
+                val code = releaseCode
+                if (code != null) {
+                    empty(exchange, code)
+                } else if (tag.isEmpty()) {
+                    empty(exchange, 404)
+                } else {
+                    val listed = assets.joinToString(",") { name ->
+                        val url = "$base/asset/$name"
+                        """{"name":${JSONObject.quote(name)},"browser_download_url":${JSONObject.quote(url)},"url":${JSONObject.quote(url)}}"""
+                    }
+                    val body = """{"tag_name":${JSONObject.quote(tag)},"zipball_url":${JSONObject.quote("$base/zip")},"assets":[$listed]}"""
+                    bytes(exchange, 200, body.toByteArray(Charsets.UTF_8), "application/json")
+                }
+            }
+            path.endsWith("/commits/HEAD") -> {
+                if (sha.isEmpty()) {
+                    empty(exchange, 404)
+                } else {
+                    val body = """{"sha":${JSONObject.quote(sha)}}"""
+                    bytes(exchange, 200, body.toByteArray(Charsets.UTF_8), "application/json")
+                }
+            }
+            else -> bytes(exchange, 200, archive, "application/zip")
+        }
+    }
+
+    private fun empty(exchange: HttpExchange, code: Int) {
+        exchange.sendResponseHeaders(code, -1)
+        exchange.close()
+    }
+
+    private fun bytes(exchange: HttpExchange, code: Int, body: ByteArray, type: String) {
+        exchange.responseHeaders.add("Content-Type", type)
+        exchange.sendResponseHeaders(code, body.size.toLong())
+        exchange.responseBody.use { it.write(body) }
+    }
+
+    override fun close() {
+        server.stop(0)
+        pool.shutdownNow()
+    }
 }

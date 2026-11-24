@@ -35,6 +35,10 @@ internal data class StagedPlugin(
     val work: File,
     val root: File,
     val manifest: PluginManifest,
+    /** owner/repo when this came from GitHub. Empty for a folder or zip on this device. */
+    val repo: String = "",
+    /** Release tag or commit prefix. Empty means plugin.json's version. */
+    val originVersion: String = "",
 ) {
     fun discard() {
         work.deleteRecursively()

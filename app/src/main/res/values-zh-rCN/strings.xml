@@ -119,7 +119,11 @@
     <string name="mygomusic_plugin_working">请稍候…</string>
     <string name="mygomusic_plugin_install_title">安装这个插件？</string>
     <string name="mygomusic_plugin_install_version">版本 %1$s</string>
+    <string name="mygomusic_plugin_install_from">来自 %1$s</string>
     <string name="mygomusic_plugin_install">安装</string>
+    <string name="mygomusic_plugin_github_title">从 GitHub 安装</string>
+    <string name="mygomusic_plugin_github_hint">插件所在的仓库，写成 owner/repo，或它在 GitHub 上的地址</string>
+    <string name="mygomusic_plugin_github_placeholder">owner/repo 或网址</string>
     <string name="mygomusic_plugin_permission_network">网络</string>
     <string name="mygomusic_plugin_permission_network_any">网络：任意主机</string>
     <string name="mygomusic_plugin_permission_network_none">不访问网络</string>
@@ -128,6 +132,7 @@
     <string name="mygomusic_plugin_delete_title">删除这个插件？</string>
     <string name="mygomusic_plugin_delete_message">将删除%1$s。</string>
     <string name="mygomusic_plugin_delete_data">同时删除插件设置</string>
+    <string name="mygomusic_plugin_check_update">检查更新</string>
     <string name="mygomusic_plugin_error_not_plugin">这不是插件。plugin.json 需要在顶层，或在唯一的那一层文件夹里。</string>
     <string name="mygomusic_plugin_error_bad_id">这个插件的 id 不被允许。</string>
     <string name="mygomusic_plugin_error_main">这个插件没有编译好的 JavaScript。main 必须是插件目录里的 .js 文件。</string>
@@ -138,6 +143,10 @@
     <string name="mygomusic_plugin_error_manifest">无法读取 plugin.json。</string>
     <string name="mygomusic_plugin_error_installed">已经从其他来源安装了名为 %1$s 的插件。</string>
     <string name="mygomusic_plugin_error_io">插件未能安装。</string>
+    <string name="mygomusic_plugin_error_repo">请写成 owner/repo，或它在 GitHub 上的地址</string>
+    <string name="mygomusic_plugin_error_no_repo">GitHub 上没有这个公开仓库</string>
+    <string name="mygomusic_plugin_error_rate">GitHub 要求稍后再试</string>
+    <string name="mygomusic_plugin_error_github">连不上 GitHub</string>
     <string name="mygomusic_plugin_version_unknown">未知版本</string>
     <string name="sort_by_add_date">添加日期</string>
     <string name="sort_by_modified_date">修改日期</string>

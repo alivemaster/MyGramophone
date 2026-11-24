@@ -38,7 +38,9 @@ data class PluginOrigin(
 
 /**
  * plugins/<id> is the package. data/<id> is kept when the package is deleted.
- * A local install writes .origin.json with a version and no repo.
+ * .order.json is the list order. .origin.json is where that package came from:
+ * a local install stores the version and no repo, a GitHub install also stores
+ * owner/repo. A package is replaced only by another from the same place.
  */
 class PluginStore(private val root: File) {
     constructor(context: Context) : this(File(context.filesDir, "mygomusic"))
@@ -70,14 +72,20 @@ class PluginStore(private val root: File) {
         }
     }
 
-    fun canReplaceWithLocal(id: String): Boolean {
+    /** [repo] empty means a folder or zip from this device. */
+    fun canReplace(id: String, repo: String): Boolean {
         val dir = pluginDir(id)
         if (!dir.exists()) return true
         if (!dir.isDirectory) return false
-        return readOrigin(dir).repo.isEmpty()
+        return readOrigin(dir).repo == repo
     }
 
-    fun install(pluginRoot: File, manifest: PluginManifest) {
+    fun install(
+        pluginRoot: File,
+        manifest: PluginManifest,
+        repo: String = "",
+        originVersion: String = manifest.version,
+    ) {
         if (!isPluginId(manifest.id)) {
             throw PluginPackageException(PluginFailureKind.BadId, manifest.id)
         }
@@ -86,10 +94,10 @@ class PluginStore(private val root: File) {
         if (target.exists() && !target.isDirectory) {
             throw PluginPackageException(PluginFailureKind.Io)
         }
-        if (target.isDirectory && readOrigin(target).repo.isNotEmpty()) {
+        if (target.isDirectory && readOrigin(target).repo != repo) {
             throw PluginPackageException(PluginFailureKind.AlreadyInstalled, manifest.id)
         }
-        writeOrigin(pluginRoot, manifest.version)
+        writeOrigin(pluginRoot, originVersion, repo)
         place(pluginRoot, target)
         remember(manifest.id)
     }
@@ -125,10 +133,12 @@ class PluginStore(private val root: File) {
         return File(pluginsDir, id)
     }
 
-    private fun writeOrigin(dir: File, version: String) {
-        val json = JSONObject().put("version", version).toString()
+    private fun writeOrigin(dir: File, version: String, repo: String) {
+        val json = JSONObject()
+        if (repo.isNotEmpty()) json.put("repo", repo)
+        json.put("version", version)
         val tmp = File(dir, "$ORIGIN_FILE.tmp")
-        tmp.writeText(json, Charsets.UTF_8)
+        tmp.writeText(json.toString(), Charsets.UTF_8)
         val dest = File(dir, ORIGIN_FILE)
         if (dest.exists() && !dest.delete()) throw PluginPackageException(PluginFailureKind.Io)
         if (!tmp.renameTo(dest)) throw PluginPackageException(PluginFailureKind.Io)

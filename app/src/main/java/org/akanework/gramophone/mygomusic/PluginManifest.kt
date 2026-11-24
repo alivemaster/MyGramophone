@@ -54,6 +54,10 @@ enum class PluginFailureKind {
     BadManifest,
     AlreadyInstalled,
     Io,
+    BadRepo,
+    NoRepo,
+    RateLimit,
+    Github,
 }
 
 class PluginPackageException(

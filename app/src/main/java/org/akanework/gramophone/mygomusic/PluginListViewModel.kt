@@ -40,12 +40,15 @@ data class PluginListUi(
     val plugins: List<InstalledPlugin> = emptyList(),
     val busy: Boolean = false,
     val confirm: PluginManifest? = null,
+    /** owner/repo for [confirm], empty when the package is from this device. */
+    val confirmRepo: String = "",
     val failure: PluginPackageException? = null,
 )
 
 class PluginListViewModel(app: Application) : AndroidViewModel(app) {
     // filesDir stats on every read. First touch stays on the IO dispatcher.
     private val store by lazy { PluginStore(app) }
+    private val github by lazy { PluginGithub() }
     val ui = MutableLiveData(PluginListUi())
     private var pending: StagedPlugin? = null
 
@@ -63,7 +66,7 @@ class PluginListViewModel(app: Application) : AndroidViewModel(app) {
     fun stageZip(uri: Uri) {
         if (ui.value?.busy == true) return
         viewModelScope.launch {
-            update { it.copy(busy = true, failure = null, confirm = null) }
+            update { it.copy(busy = true, failure = null, confirm = null, confirmRepo = "") }
             try {
                 val staged = withContext(Dispatchers.IO) {
                     val cache = getApplication<Application>().cacheDir
@@ -97,7 +100,7 @@ class PluginListViewModel(app: Application) : AndroidViewModel(app) {
     fun stageTree(uri: Uri) {
         if (ui.value?.busy == true) return
         viewModelScope.launch {
-            update { it.copy(busy = true, failure = null, confirm = null) }
+            update { it.copy(busy = true, failure = null, confirm = null, confirmRepo = "") }
             try {
                 val staged = withContext(Dispatchers.IO) {
                     val granted = takeRead(uri)
@@ -126,6 +129,28 @@ class PluginListViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun stageGithub(repo: String) {
+        if (ui.value?.busy == true) return
+        viewModelScope.launch {
+            update { it.copy(busy = true, failure = null, confirm = null, confirmRepo = "") }
+            try {
+                // cacheDir and the HTTP client both touch disk. Stay off the main thread.
+                val staged = withContext(Dispatchers.IO) {
+                    github.stage(repo, getApplication<Application>().cacheDir)
+                }
+                publish(staged)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: PluginPackageException) {
+                Log.w(TAG, "stage github", e)
+                update { it.copy(busy = false, failure = e) }
+            } catch (e: Exception) {
+                Log.w(TAG, "stage github", e)
+                update { it.copy(busy = false, failure = PluginPackageException(PluginFailureKind.Github, cause = e)) }
+            }
+        }
+    }
+
     fun confirmInstall() {
         val staged = pending ?: return
         if (ui.value?.busy == true) return
@@ -133,11 +158,12 @@ class PluginListViewModel(app: Application) : AndroidViewModel(app) {
             yield()
             if (pending !== staged) return@launch
             pending = null
-            update { it.copy(busy = true, confirm = null) }
+            update { it.copy(busy = true, confirm = null, confirmRepo = "") }
             try {
                 val plugins = withContext(Dispatchers.IO) {
                     try {
-                        store.install(staged.root, staged.manifest)
+                        val version = staged.originVersion.ifEmpty { staged.manifest.version }
+                        store.install(staged.root, staged.manifest, staged.repo, version)
                         store.list(locale())
                     } finally {
                         staged.discard()
@@ -159,7 +185,7 @@ class PluginListViewModel(app: Application) : AndroidViewModel(app) {
     fun discardPending() {
         val staged = pending
         pending = null
-        update { it.copy(confirm = null) }
+        update { it.copy(confirm = null, confirmRepo = "") }
         if (staged != null) {
             viewModelScope.launch(Dispatchers.IO) { staged.discard() }
         }
@@ -196,7 +222,7 @@ class PluginListViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun publish(staged: StagedPlugin) {
-        val allowed = withContext(Dispatchers.IO) { store.canReplaceWithLocal(staged.manifest.id) }
+        val allowed = withContext(Dispatchers.IO) { store.canReplace(staged.manifest.id, staged.repo) }
         if (!allowed) {
             val title = staged.manifest.title(locale())
             withContext(Dispatchers.IO) { staged.discard() }
@@ -213,7 +239,7 @@ class PluginListViewModel(app: Application) : AndroidViewModel(app) {
         if (previous != null) {
             withContext(Dispatchers.IO) { previous.discard() }
         }
-        update { it.copy(busy = false, confirm = staged.manifest) }
+        update { it.copy(busy = false, confirm = staged.manifest, confirmRepo = staged.repo) }
     }
 
     private fun locale(): Locale {

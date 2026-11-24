@@ -271,8 +271,16 @@
     <string name="mygomusic_plugin_install_title">Install this plugin?</string>
     <!-- Confirmation before a plugin is copied into app storage. Version line -->
     <string name="mygomusic_plugin_install_version">Version %1$s</string>
+    <!-- Confirmation before a plugin from GitHub is copied in. %1$s is owner/repo -->
+    <string name="mygomusic_plugin_install_from">From %1$s</string>
     <!-- Positive button on the plugin install confirmation -->
     <string name="mygomusic_plugin_install">Install</string>
+    <!-- Dialog that asks for a GitHub repository. Title -->
+    <string name="mygomusic_plugin_github_title">Install from GitHub</string>
+    <!-- Dialog that asks for a GitHub repository. Explanation -->
+    <string name="mygomusic_plugin_github_hint">A repository with a plugin, as owner/repo or its address on GitHub</string>
+    <!-- Placeholder in the GitHub repository field -->
+    <string name="mygomusic_plugin_github_placeholder">owner/repo or URL</string>
     <!-- Network permission section when the plugin names hosts -->
     <string name="mygomusic_plugin_permission_network">Network</string>
     <!-- Network permission when the plugin asks for every host -->
@@ -289,6 +297,8 @@
     <string name="mygomusic_plugin_delete_message">%1$s will be removed.</string>
     <!-- Checkbox on the delete confirmation. Unchecked keeps the plugin's saved settings. -->
     <string name="mygomusic_plugin_delete_data">Also delete plugin settings</string>
+    <!-- Menu item on an installed plugin. Does not check yet. -->
+    <string name="mygomusic_plugin_check_update">Check for updates</string>
     <!-- The selected file or folder has no plugin.json in the expected place -->
     <string name="mygomusic_plugin_error_not_plugin">This is not a plugin. It needs a plugin.json at the top, or in its only folder.</string>
     <!-- plugin.json id is missing or not a safe folder name -->
@@ -305,6 +315,14 @@
     <!-- %1$s is the plugin name. Another source already uses this id. -->
     <string name="mygomusic_plugin_error_installed">A plugin called %1$s is already installed from another source.</string>
     <string name="mygomusic_plugin_error_io">The plugin could not be installed.</string>
+    <!-- The text is not owner/repo and not a GitHub address -->
+    <string name="mygomusic_plugin_error_repo">Write a repository as owner/repo, or its address on GitHub</string>
+    <!-- GitHub has no public repository by that name -->
+    <string name="mygomusic_plugin_error_no_repo">There\'s no such public repository on GitHub</string>
+    <!-- GitHub answered 403 or 429 -->
+    <string name="mygomusic_plugin_error_rate">GitHub says to slow down; try again in a while</string>
+    <!-- GitHub could not be asked, or its answer could not be used -->
+    <string name="mygomusic_plugin_error_github">GitHub could not be reached</string>
     <!-- Summary when plugin.json has no version -->
     <string name="mygomusic_plugin_version_unknown">Unknown version</string>
     <!-- Toggle which makes color detection for album cover based color use more CPU to detect the

@@ -15,10 +15,22 @@
   ~     along with this program.  If not, see <https://www.gnu.org/licenses/>.
   -->
 
-<com.google.android.material.checkbox.MaterialCheckBox xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/mygomusic_plugin_delete_data"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:paddingHorizontal="?attr/dialogPreferredPadding"
-    android:paddingBottom="8dp"
-    android:text="@string/mygomusic_plugin_delete_data" />
+    android:orientation="vertical"
+    android:paddingHorizontal="16dp"
+    android:paddingTop="16dp">
+
+    <TextView
+        android:id="@+id/mygomusic_plugin_delete_message"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="8dp" />
+
+    <CheckBox
+        android:id="@+id/mygomusic_plugin_delete_data"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/mygomusic_plugin_delete_data" />
+</LinearLayout>
