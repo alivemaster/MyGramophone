@@ -198,7 +198,10 @@ class PluginListFragment : BasePreferenceFragment() {
                 }
                 isPersistent = false
                 isIconSpaceReserved = false
-                onPreferenceClickListener = Preference.OnPreferenceClickListener { true }
+                onPreferenceClickListener = Preference.OnPreferenceClickListener {
+                    if (!plugin.broken) model.logPlaylists(plugin.directoryName)
+                    true
+                }
                 onMenu = { confirmDelete(plugin) }
             })
         }

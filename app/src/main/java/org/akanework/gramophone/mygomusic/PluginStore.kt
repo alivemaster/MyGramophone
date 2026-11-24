@@ -52,6 +52,8 @@ class PluginStore(private val root: File) {
         return File(File(root, "data"), id)
     }
 
+    fun packageDir(id: String): File = pluginDir(id)
+
     fun list(locale: Locale): List<InstalledPlugin> {
         val dirs = pluginsDir.listFiles().orEmpty().filter {
             it.isDirectory && isPluginId(it.name)

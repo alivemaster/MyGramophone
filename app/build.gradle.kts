@@ -351,6 +351,8 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.11.0")
     implementation("net.lingala.zip4j:zip4j:2.11.6")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    // 1.0.6 and later publish Kotlin 2.4 metadata. This tree stays on Kotlin 2.3.
+    implementation("io.github.dokar3:quickjs-kt:1.0.5")
     //implementation("androidx.paging:paging-runtime-ktx:3.2.1") TODO paged, partial, flow based library loading
     //implementation("androidx.paging:paging-guava:3.2.1") TODO do we have guava? do we need this?
     implementation("androidx.preference:preference-ktx:1.2.1")

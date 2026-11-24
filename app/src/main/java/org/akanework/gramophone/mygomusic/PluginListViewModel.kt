@@ -26,6 +26,7 @@ import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
+import androidx.preference.PreferenceManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -195,6 +196,33 @@ class PluginListViewModel(app: Application) : AndroidViewModel(app) {
         update { it.copy(failure = null) }
     }
 
+    /** Runs only after the user opens this row. Cold start does not call it. */
+    fun logPlaylists(id: String) {
+        if (ui.value?.busy == true) return
+        if (!pluginsEnabled()) {
+            Log.i(TAG, "plugin $id skipped, support is off")
+            return
+        }
+        update { it.copy(busy = true) }
+        viewModelScope.launch {
+            try {
+                val text = withContext(Dispatchers.IO) {
+                    val dir = store.packageDir(id)
+                    val manifest = PluginManifest.read(dir)
+                    val value = PluginRuntime(manifest, dir, store.dataDir(id), locale()).call("playlists")
+                    pluginJsonText(value)
+                }
+                Log.i(TAG, "plugin $id playlists $text")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "plugin $id playlists", e)
+            } finally {
+                update { it.copy(busy = false) }
+            }
+        }
+    }
+
     fun delete(id: String, deleteData: Boolean) {
         if (ui.value?.busy == true) return
         viewModelScope.launch {
@@ -240,6 +268,11 @@ class PluginListViewModel(app: Application) : AndroidViewModel(app) {
             withContext(Dispatchers.IO) { previous.discard() }
         }
         update { it.copy(busy = false, confirm = staged.manifest, confirmRepo = staged.repo) }
+    }
+
+    private fun pluginsEnabled(): Boolean {
+        return PreferenceManager.getDefaultSharedPreferences(getApplication())
+            .getBoolean(MygomusicPrefs.ENABLED, false)
     }
 
     private fun locale(): Locale {
