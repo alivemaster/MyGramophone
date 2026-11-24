@@ -258,6 +258,18 @@ android {
         includeInBundle = false
     }
     testOptions.unitTests.isIncludeAndroidResources = true
+    // Robolectric reflects into the JDK to install Android's FileDescriptor.
+    // JDK 16+ hides jdk.internal.access unless the test JVM opens it.
+    testOptions.unitTests.all {
+        it.jvmArgs(
+            "--add-opens=java.base/java.lang=ALL-UNNAMED",
+            "--add-opens=java.base/java.lang.reflect=ALL-UNNAMED",
+            "--add-opens=java.base/java.io=ALL-UNNAMED",
+            "--add-opens=java.base/java.util=ALL-UNNAMED",
+            "--add-opens=java.base/jdk.internal.access=ALL-UNNAMED",
+            "--enable-native-access=ALL-UNNAMED",
+        )
+    }
 }
 
 resourcePlaceholders {
@@ -325,6 +337,7 @@ dependencies {
     implementation("androidx.concurrent:concurrent-futures-ktx:1.3.0")
     implementation("androidx.constraintlayout:constraintlayout:2.2.1")
     implementation("androidx.core:core-ktx:1.17.0")
+    implementation("androidx.documentfile:documentfile:1.1.0")
     implementation("androidx.core:core-splashscreen:1.2.0")
     implementation("androidx.fragment:fragment-ktx:1.8.9")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.4")
@@ -336,6 +349,7 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer-midi:$media3Version")
     implementation("androidx.media3:media3-session:$media3Version")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.11.0")
+    implementation("net.lingala.zip4j:zip4j:2.11.6")
     //implementation("androidx.paging:paging-runtime-ktx:3.2.1") TODO paged, partial, flow based library loading
     //implementation("androidx.paging:paging-guava:3.2.1") TODO do we have guava? do we need this?
     implementation("androidx.preference:preference-ktx:1.2.1")

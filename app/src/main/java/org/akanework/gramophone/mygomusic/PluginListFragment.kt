@@ -17,21 +17,32 @@
 
 package org.akanework.gramophone.mygomusic
 
-import android.content.SharedPreferences
+import android.net.Uri
 import android.os.Bundle
+import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.widget.CheckBox
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.widget.PopupMenu
+import androidx.core.os.ConfigurationCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updateLayoutParams
+import androidx.fragment.app.viewModels
 import androidx.preference.Preference
+import androidx.preference.PreferenceCategory
+import androidx.preference.PreferenceViewHolder
 import androidx.preference.SwitchPreferenceCompat
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import org.akanework.gramophone.R
+import org.akanework.gramophone.logic.allowDiskAccessInStrictMode
 import org.akanework.gramophone.logic.dpToPx
 import org.akanework.gramophone.ui.fragments.BasePreferenceFragment
 import org.akanework.gramophone.ui.fragments.BaseSettingsActivity
+import java.util.Locale
 
 /** Absent means off. Callers must pass false as the default. */
 object MygomusicPrefs {
@@ -43,7 +54,19 @@ class PluginListActivity : BaseSettingsActivity(
     { PluginListFragment() })
 
 class PluginListFragment : BasePreferenceFragment() {
+    private val model: PluginListViewModel by viewModels()
     private var addButton: FloatingActionButton? = null
+    private var progressDialog: AlertDialog? = null
+    private var confirmDialog: AlertDialog? = null
+    private var failureDialog: AlertDialog? = null
+    private var rendered: List<InstalledPlugin>? = null
+
+    private val openZip = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) model.stageZip(uri)
+    }
+    private val openTree = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
+        if (uri != null) model.stageTree(uri)
+    }
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         setPreferencesFromResource(R.xml.settings_mygomusic_plugins, rootKey)
@@ -76,12 +99,22 @@ class PluginListFragment : BasePreferenceFragment() {
             insets
         }
         ViewCompat.requestApplyInsets(fab)
-        fab.setOnClickListener { showInstallMenu(it) }
+        fab.setOnClickListener { showAddChoices() }
+        fab.show()
         addButton = fab
-        syncAddButton()
+        model.ui.observe(viewLifecycleOwner) { render(it) }
     }
 
     override fun onDestroyView() {
+        progressDialog?.dismiss()
+        progressDialog = null
+        confirmDialog?.setOnCancelListener(null)
+        confirmDialog?.dismiss()
+        confirmDialog = null
+        failureDialog?.setOnCancelListener(null)
+        failureDialog?.dismiss()
+        failureDialog = null
+        rendered = null
         addButton?.let { button ->
             button.setOnClickListener(null)
             (button.parent as? ViewGroup)?.removeView(button)
@@ -90,22 +123,187 @@ class PluginListFragment : BasePreferenceFragment() {
         super.onDestroyView()
     }
 
-    override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
-        super.onSharedPreferenceChanged(sharedPreferences, key)
-        if (key == MygomusicPrefs.ENABLED) syncAddButton()
+    private fun render(ui: PluginListUi) {
+        renderList(ui.plugins)
+        if (ui.busy) {
+            if (progressDialog?.isShowing != true) {
+                progressDialog = MaterialAlertDialogBuilder(requireContext())
+                    .setMessage(R.string.mygomusic_plugin_working)
+                    .setCancelable(false)
+                    .show()
+            }
+        } else {
+            progressDialog?.dismiss()
+            progressDialog = null
+        }
+        val manifest = ui.confirm
+        if (manifest == null) {
+            confirmDialog?.setOnCancelListener(null)
+            confirmDialog?.dismiss()
+            confirmDialog = null
+        } else if (confirmDialog?.isShowing != true) {
+            confirmDialog = MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.mygomusic_plugin_install_title)
+                .setMessage(confirmText(manifest))
+                .setPositiveButton(R.string.mygomusic_plugin_install) { _, _ -> model.confirmInstall() }
+                .setNegativeButton(android.R.string.cancel) { _, _ -> model.discardPending() }
+                .setOnCancelListener { model.discardPending() }
+                .show()
+        }
+        val failure = ui.failure
+        if (failure == null) {
+            failureDialog?.setOnCancelListener(null)
+            failureDialog?.dismiss()
+            failureDialog = null
+        } else if (failureDialog?.isShowing != true) {
+            failureDialog = MaterialAlertDialogBuilder(requireContext())
+                .setMessage(failureMessage(failure))
+                .setPositiveButton(android.R.string.ok) { _, _ -> model.clearFailure() }
+                .setOnCancelListener { model.clearFailure() }
+                .show()
+        }
     }
 
-    private fun syncAddButton() {
-        val fab = addButton ?: return
-        val enabled = findPreference<SwitchPreferenceCompat>(MygomusicPrefs.ENABLED)?.isChecked == true
-        if (enabled) fab.show() else fab.hide()
+    private fun renderList(plugins: List<InstalledPlugin>) {
+        if (rendered == plugins) return
+        rendered = plugins
+        val category = findPreference<PreferenceCategory>("mygomusic_plugin_list") ?: return
+        val empty = findPreference<Preference>("mygomusic_plugin_list_empty") ?: return
+        empty.isVisible = plugins.isEmpty()
+        val stale = buildList {
+            for (i in 0 until category.preferenceCount) {
+                val preference = category.getPreference(i)
+                if (preference.key.startsWith(ITEM_PREFIX)) add(preference)
+            }
+        }
+        stale.forEach { category.removePreference(it) }
+        for (plugin in plugins) {
+            category.addPreference(InstalledPluginPreference(requireContext()).apply {
+                key = ITEM_PREFIX + plugin.directoryName
+                title = plugin.title
+                summary = when {
+                    plugin.broken -> getString(R.string.mygomusic_plugin_error_manifest)
+                    plugin.version.isEmpty() -> getString(R.string.mygomusic_plugin_version_unknown)
+                    else -> plugin.version
+                }
+                isPersistent = false
+                isIconSpaceReserved = false
+                onPreferenceClickListener = Preference.OnPreferenceClickListener { true }
+                onMenu = { confirmDelete(plugin) }
+            })
+        }
     }
 
-    private fun showInstallMenu(anchor: View) {
-        PopupMenu(anchor.context, anchor).apply {
-            menuInflater.inflate(R.menu.mygomusic_plugin_add, menu)
-            setOnMenuItemClickListener { true }
-            show()
+    private fun confirmDelete(plugin: InstalledPlugin) {
+        val check = layoutInflater.inflate(R.layout.mygomusic_plugin_delete_data, null) as CheckBox
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.mygomusic_plugin_delete_title)
+            .setMessage(getString(R.string.mygomusic_plugin_delete_message, plugin.title))
+            .setView(check)
+            .setPositiveButton(R.string.delete) { _, _ ->
+                model.delete(plugin.directoryName, check.isChecked)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun confirmText(manifest: PluginManifest): String = buildString {
+        append(manifest.title(locale()))
+        if (manifest.version.isNotEmpty()) {
+            append('\n')
+            append(getString(R.string.mygomusic_plugin_install_version, manifest.version))
+        }
+        append("\n\n")
+        when {
+            manifest.network.isEmpty() ->
+                append(getString(R.string.mygomusic_plugin_permission_network_none))
+            manifest.network.any { it == "*" } ->
+                append(getString(R.string.mygomusic_plugin_permission_network_any))
+            else -> {
+                append(getString(R.string.mygomusic_plugin_permission_network))
+                append('\n')
+                append(manifest.network.joinToString("\n"))
+            }
+        }
+        if (manifest.process.isNotEmpty()) {
+            append("\n\n")
+            if (manifest.process.any { it == "*" }) {
+                append(getString(R.string.mygomusic_plugin_permission_process_any))
+            } else {
+                append(getString(R.string.mygomusic_plugin_permission_process))
+                append('\n')
+                append(manifest.process.joinToString("\n"))
+            }
+        }
+    }
+
+    private fun failureMessage(error: PluginPackageException): String {
+        return when (error.kind) {
+            PluginFailureKind.NotAPlugin -> getString(R.string.mygomusic_plugin_error_not_plugin)
+            PluginFailureKind.BadId -> getString(R.string.mygomusic_plugin_error_bad_id)
+            PluginFailureKind.MainNotCompiled -> getString(R.string.mygomusic_plugin_error_main)
+            PluginFailureKind.ZipSlip -> getString(R.string.mygomusic_plugin_error_zip_slip)
+            PluginFailureKind.Link -> getString(R.string.mygomusic_plugin_error_link)
+            PluginFailureKind.TooLarge -> getString(R.string.mygomusic_plugin_error_too_large)
+            PluginFailureKind.TooManyFiles -> getString(R.string.mygomusic_plugin_error_too_many)
+            PluginFailureKind.BadManifest -> getString(R.string.mygomusic_plugin_error_manifest)
+            PluginFailureKind.AlreadyInstalled ->
+                getString(R.string.mygomusic_plugin_error_installed, error.detail ?: "")
+            PluginFailureKind.Io -> getString(R.string.mygomusic_plugin_error_io)
+        }
+    }
+
+    private fun locale(): Locale {
+        return ConfigurationCompat.getLocales(resources.configuration)[0] ?: Locale.getDefault()
+    }
+
+    private fun showAddChoices() {
+        MaterialAlertDialogBuilder(requireContext())
+            .setItems(
+                arrayOf(
+                    getString(R.string.mygomusic_plugin_add_github),
+                    getString(R.string.mygomusic_plugin_pick_folder),
+                    getString(R.string.mygomusic_plugin_pick_zip),
+                )
+            ) { _, which ->
+                when (which) {
+                    // GitHub install is a later step. This entry does not explain that.
+                    0 -> Unit
+                    1 -> allowDiskAccessInStrictMode { openTree.launch(null) }
+                    else -> allowDiskAccessInStrictMode { openZip.launch(arrayOf("*/*")) }
+                }
+            }
+            .show()
+    }
+
+    private companion object {
+        const val ITEM_PREFIX = "mygomusic_installed_"
+    }
+}
+
+private class InstalledPluginPreference(context: android.content.Context) : Preference(context) {
+    var onMenu: (() -> Unit)? = null
+
+    init {
+        layoutResource = R.layout.preference_switch
+        widgetLayoutResource = R.layout.mygomusic_plugin_menu
+    }
+
+    override fun onBindViewHolder(holder: PreferenceViewHolder) {
+        super.onBindViewHolder(holder)
+        holder.findViewById(R.id.mygomusic_plugin_menu)?.setOnClickListener { anchor ->
+            PopupMenu(anchor.context, anchor, Gravity.END).apply {
+                menuInflater.inflate(R.menu.mygomusic_plugin_item, menu)
+                setOnMenuItemClickListener { item ->
+                    if (item.itemId == R.id.mygomusic_plugin_delete) {
+                        onMenu?.invoke()
+                        true
+                    } else {
+                        false
+                    }
+                }
+                show()
+            }
         }
     }
 }

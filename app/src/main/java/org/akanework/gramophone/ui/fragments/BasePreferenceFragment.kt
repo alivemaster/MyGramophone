@@ -71,11 +71,15 @@ abstract class BasePreferenceFragment : PreferenceFragmentCompat(),
 
     override fun onStart() {
         super.onStart()
-        preferenceScreen.sharedPreferences?.registerOnSharedPreferenceChangeListener(this)
+        allowDiskAccessInStrictMode {
+            preferenceScreen.sharedPreferences?.registerOnSharedPreferenceChangeListener(this)
+        }
     }
 
     override fun onStop() {
-        preferenceScreen.sharedPreferences?.unregisterOnSharedPreferenceChangeListener(this)
+        allowDiskAccessInStrictMode {
+            preferenceScreen.sharedPreferences?.unregisterOnSharedPreferenceChangeListener(this)
+        }
         super.onStop()
     }
 

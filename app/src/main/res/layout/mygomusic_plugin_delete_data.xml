@@ -15,11 +15,10 @@
   ~     along with this program.  If not, see <https://www.gnu.org/licenses/>.
   -->
 
-<menu xmlns:android="http://schemas.android.com/apk/res/android">
-    <item
-        android:id="@+id/mygomusic_plugin_add_local"
-        android:title="@string/mygomusic_plugin_add_local" />
-    <item
-        android:id="@+id/mygomusic_plugin_add_github"
-        android:title="@string/mygomusic_plugin_add_github" />
-</menu>
+<com.google.android.material.checkbox.MaterialCheckBox xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/mygomusic_plugin_delete_data"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:paddingHorizontal="?attr/dialogPreferredPadding"
+    android:paddingBottom="8dp"
+    android:text="@string/mygomusic_plugin_delete_data" />

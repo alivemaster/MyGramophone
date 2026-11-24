@@ -259,10 +259,54 @@
     <string name="mygomusic_plugin_list_empty">No plugins installed</string>
     <!-- Content description of the button that adds a mygo-music plugin -->
     <string name="mygomusic_plugin_add">Add plugin</string>
-    <!-- Menu item for installing a plugin from a local file or folder -->
-    <string name="mygomusic_plugin_add_local">Local file or folder</string>
-    <!-- Menu item for installing a plugin from a GitHub repository -->
-    <string name="mygomusic_plugin_add_github">GitHub repository</string>
+    <!-- Adds a mygo-music plugin from a GitHub repository -->
+    <string name="mygomusic_plugin_add_github">From GitHub…</string>
+    <!-- Chooses a folder when adding a mygo-music plugin -->
+    <string name="mygomusic_plugin_pick_folder">From a Folder…</string>
+    <!-- Chooses a zip when adding a mygo-music plugin -->
+    <string name="mygomusic_plugin_pick_zip">From a Zip…</string>
+    <!-- Progress while a plugin package is copied and checked -->
+    <string name="mygomusic_plugin_working">Working…</string>
+    <!-- Confirmation before a plugin is copied into app storage. Title -->
+    <string name="mygomusic_plugin_install_title">Install this plugin?</string>
+    <!-- Confirmation before a plugin is copied into app storage. Version line -->
+    <string name="mygomusic_plugin_install_version">Version %1$s</string>
+    <!-- Positive button on the plugin install confirmation -->
+    <string name="mygomusic_plugin_install">Install</string>
+    <!-- Network permission section when the plugin names hosts -->
+    <string name="mygomusic_plugin_permission_network">Network</string>
+    <!-- Network permission when the plugin asks for every host -->
+    <string name="mygomusic_plugin_permission_network_any">Network: any host</string>
+    <!-- Shown when the plugin does not ask for network access -->
+    <string name="mygomusic_plugin_permission_network_none">No network access</string>
+    <!-- Process permission. This app does not run the listed programs. -->
+    <string name="mygomusic_plugin_permission_process">This app will not run these programs</string>
+    <!-- Process permission when the plugin asks to run any program -->
+    <string name="mygomusic_plugin_permission_process_any">This app will not run any programs</string>
+    <!-- Confirmation before deleting an installed plugin. Title -->
+    <string name="mygomusic_plugin_delete_title">Remove this plugin?</string>
+    <!-- Confirmation before deleting an installed plugin. %1$s is the plugin name -->
+    <string name="mygomusic_plugin_delete_message">%1$s will be removed.</string>
+    <!-- Checkbox on the delete confirmation. Unchecked keeps the plugin's saved settings. -->
+    <string name="mygomusic_plugin_delete_data">Also delete plugin settings</string>
+    <!-- The selected file or folder has no plugin.json in the expected place -->
+    <string name="mygomusic_plugin_error_not_plugin">This is not a plugin. It needs a plugin.json at the top, or in its only folder.</string>
+    <!-- plugin.json id is missing or not a safe folder name -->
+    <string name="mygomusic_plugin_error_bad_id">This plugin\'s id is not allowed.</string>
+    <!-- main is missing, not JavaScript, or outside the plugin folder -->
+    <string name="mygomusic_plugin_error_main">This plugin has no compiled JavaScript. Its main file must be a .js file inside the plugin.</string>
+    <!-- Zip entry would be written outside the plugin directory -->
+    <string name="mygomusic_plugin_error_zip_slip">The archive contains a file outside the plugin.</string>
+    <!-- Zip or folder contains a symbolic link -->
+    <string name="mygomusic_plugin_error_link">The plugin contains a link, which is not allowed.</string>
+    <string name="mygomusic_plugin_error_too_large">The plugin is too large.</string>
+    <string name="mygomusic_plugin_error_too_many">The plugin has too many files.</string>
+    <string name="mygomusic_plugin_error_manifest">plugin.json could not be read.</string>
+    <!-- %1$s is the plugin name. Another source already uses this id. -->
+    <string name="mygomusic_plugin_error_installed">A plugin called %1$s is already installed from another source.</string>
+    <string name="mygomusic_plugin_error_io">The plugin could not be installed.</string>
+    <!-- Summary when plugin.json has no version -->
+    <string name="mygomusic_plugin_version_unknown">Unknown version</string>
     <!-- Toggle which makes color detection for album cover based color use more CPU to detect the
     color, which improves accuracy but causes some lags on old devices. Subtext -->
     <string name="settings_color_accuracy_summary">Make color generation accurate</string>
