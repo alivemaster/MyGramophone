@@ -23,6 +23,7 @@ import com.dokar.quickjs.binding.define
 import com.dokar.quickjs.binding.toJsObject
 import com.dokar.quickjs.quickJs
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
@@ -43,11 +44,12 @@ class PluginCallException(
     message: String,
 ) : Exception(message)
 
-class PluginRuntime(
+internal class PluginRuntime(
     private val manifest: PluginManifest,
     private val pluginDir: File,
     private val dataDir: File,
     private val locale: Locale,
+    private val host: PluginHost = PluginHostNone,
 ) {
     suspend fun call(
         exportName: String,
@@ -127,6 +129,28 @@ class PluginRuntime(
                                 aesEcbEncrypt(argString(incoming, 0), argString(incoming, 1))
                             }
                         }
+                        function("openURL") { incoming ->
+                            val address = incoming.firstOrNull() as? String ?: ""
+                            host.openUrl(requireWebPage(address))
+                        }
+                        function("signInPrompt") { incoming ->
+                            val raw = incoming.firstOrNull() as? Map<*, *>
+                            val qr = raw?.get("qr") as? String ?: ""
+                            val text = raw?.get("text") as? String ?: ""
+                            host.signInPrompt(qr, text)
+                        }
+                        asyncFunction("waitForRedirect") { incoming ->
+                            val raw = incoming.firstOrNull() as? Map<*, *>
+                                ?: throw IllegalArgumentException("waitForRedirect")
+                            val wait = redirectWait(manifest.network, raw)
+                            awaitRedirect(wait.port, wait.path, wait.page, wait.timeoutMs).toJsObject()
+                        }
+                        asyncFunction("webSignIn") { incoming ->
+                            val raw = incoming.firstOrNull() as? Map<*, *>
+                                ?: throw IllegalArgumentException("webSignIn")
+                            val request = webSignInRequest(manifest.network, raw)
+                            mapOf("cookie" to host.webSignIn(request)).toJsObject()
+                        }
                         function("spawn") { _ ->
                             throw IllegalStateException("This app does not run external programs.")
                         }
@@ -157,8 +181,13 @@ class PluginRuntime(
                                 redirect = req["redirect"] as? String ?: "follow",
                             )
                         }
+                        asyncFunction("sleep") { incoming ->
+                            val ms = (incoming.firstOrNull() as? Number)?.toLong() ?: 0L
+                            delay(ms.coerceIn(0L, 60_000L))
+                        }
                     }
                     evaluate<Any?>(FETCH_SHIM, filename = "mygramophone-fetch.js")
+                    evaluate<Any?>(TIMER_SHIM, filename = "mygramophone-timers.js")
                     addModule(specifier, source)
                     evaluate<Any?>(script, filename = CALLER, asModule = true)
                 }
@@ -249,8 +278,118 @@ class PluginRuntime(
                 headers: headersOut,
                 async text() { return raw.body; },
                 async json() { return JSON.parse(raw.body); },
+                async arrayBuffer() {
+                  const bytes = raw.bodyBase64 ? base64Bytes(raw.bodyBase64) : latin1(raw.body || "");
+                  return bytes.buffer;
+                },
               };
             };
+            function latin1(text) {
+              const bytes = new Uint8Array(text.length);
+              for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i) & 255;
+              return bytes;
+            }
+            function base64Bytes(text) {
+              const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+              const clean = String(text).replace(/=+$/, "");
+              const out = [];
+              let buffer = 0;
+              let bits = 0;
+              for (let i = 0; i < clean.length; i++) {
+                const value = alphabet.indexOf(clean.charAt(i));
+                if (value < 0) continue;
+                buffer = (buffer << 6) | value;
+                bits += 6;
+                if (bits >= 8) {
+                  bits -= 8;
+                  out.push((buffer >> bits) & 255);
+                }
+              }
+              const bytes = new Uint8Array(out.length);
+              for (let i = 0; i < out.length; i++) bytes[i] = out[i];
+              return bytes;
+            }
+        """.trimIndent()
+        // quickjs-kt has no timers. QR login polls with setTimeout, and fetch aborts the same way.
+        val TIMER_SHIM = """
+            (function () {
+              if (typeof globalThis.setTimeout !== "function") {
+                const sleep = globalThis.__mygramophone.sleep;
+                const queue = [];
+                const repeats = new Map();
+                let seq = 1;
+                let pumping = false;
+                function arm() {
+                  if (pumping) return;
+                  pumping = true;
+                  (async () => {
+                    try {
+                      while (queue.length) {
+                        let soonest = queue[0];
+                        for (let i = 1; i < queue.length; i++) {
+                          if (queue[i].at < soonest.at) soonest = queue[i];
+                        }
+                        const wait = soonest.at - Date.now();
+                        if (wait > 50) await sleep(50);
+                        else await sleep(Math.max(0, wait));
+                        const now = Date.now();
+                        let index = 0;
+                        while (index < queue.length) {
+                          if (queue[index].at > now) { index++; continue; }
+                          const item = queue.splice(index, 1)[0];
+                          try { item.fn(); } catch (e) { console.error(e); }
+                        }
+                      }
+                    } finally {
+                      pumping = false;
+                      if (queue.length) arm();
+                    }
+                  })();
+                }
+                globalThis.setTimeout = function (fn, ms) {
+                  if (typeof fn !== "function") return 0;
+                  const id = seq++;
+                  queue.push({ id: id, fn: fn, at: Date.now() + Math.max(0, Number(ms) || 0) });
+                  arm();
+                  return id;
+                };
+                globalThis.clearTimeout = function (id) {
+                  const index = queue.findIndex(function (item) { return item.id === id; });
+                  if (index >= 0) queue.splice(index, 1);
+                };
+                globalThis.setInterval = function (fn, ms) {
+                  if (typeof fn !== "function") return 0;
+                  const period = Math.max(0, Number(ms) || 0);
+                  const handle = { id: seq++, on: true };
+                  repeats.set(handle.id, handle);
+                  const tick = function () {
+                    if (!handle.on) return;
+                    handle.timer = globalThis.setTimeout(function () {
+                      if (!handle.on) return;
+                      try { fn(); } catch (e) { console.error(e); }
+                      tick();
+                    }, period);
+                  };
+                  tick();
+                  return handle.id;
+                };
+                globalThis.clearInterval = function (id) {
+                  const handle = repeats.get(id);
+                  if (!handle) return;
+                  handle.on = false;
+                  repeats.delete(id);
+                  globalThis.clearTimeout(handle.timer);
+                };
+              }
+              if (typeof globalThis.AbortController === "undefined") {
+                function AbortSignal() { this.aborted = false; }
+                AbortSignal.prototype.addEventListener = function () {};
+                AbortSignal.prototype.removeEventListener = function () {};
+                function AbortController() { this.signal = new AbortSignal(); }
+                AbortController.prototype.abort = function () { this.signal.aborted = true; };
+                globalThis.AbortController = AbortController;
+              }
+            })();
         """.trimIndent()
         const val MEMORY_LIMIT_BYTES = 256L * 1024 * 1024
         const val CALL_TIMEOUT_MILLIS = 30_000L

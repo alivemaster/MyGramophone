@@ -17,7 +17,9 @@
 
 package org.akanework.gramophone.mygomusic
 
+import android.app.Activity
 import android.app.Application
+import android.graphics.Bitmap
 import android.util.Log
 import androidx.core.os.ConfigurationCompat
 import androidx.lifecycle.AndroidViewModel
@@ -25,10 +27,14 @@ import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import org.akanework.gramophone.R
+import java.lang.ref.WeakReference
 import java.util.Locale
 
 data class SettingSaveFailure(
@@ -53,8 +59,15 @@ data class PluginSettingsUi(
     val sessionReady: Boolean = false,
     /** The plugin exports sign-in, sign-out, or account. */
     val offersSignIn: Boolean = false,
+    /** The plugin exports signIn. The account row can start it. */
+    val canSignIn: Boolean = false,
     val signedIn: Boolean = false,
     val accountName: String = "",
+    val signingIn: Boolean = false,
+    val promptText: String = "",
+    val promptQr: Bitmap? = null,
+    /** Shown after a sign-in attempt stops short of an account. */
+    val signInMessage: String? = null,
     val saving: Boolean = false,
     val busy: Boolean = false,
     val failure: Boolean = false,
@@ -71,6 +84,9 @@ class PluginSettingsViewModel(app: Application) : AndroidViewModel(app) {
     private var gone = false
     private var pendingSaves = 0
     private var sessionBusy = false
+    private var signInJob: Job? = null
+    @Volatile private var signGeneration = 0
+    private var hostActivity: WeakReference<Activity>? = null
 
     fun load(id: String) {
         if (started) return
@@ -91,6 +107,7 @@ class PluginSettingsViewModel(app: Application) : AndroidViewModel(app) {
                     it.copy(
                         sessionReady = true,
                         offersSignIn = session.offered,
+                        canSignIn = session.canSignIn,
                         signedIn = session.signedIn,
                         accountName = session.name,
                     )
@@ -122,11 +139,96 @@ class PluginSettingsViewModel(app: Application) : AndroidViewModel(app) {
                 it.copy(
                     sessionReady = true,
                     offersSignIn = session.offered,
+                    canSignIn = session.canSignIn,
                     signedIn = session.signedIn,
                     accountName = session.name,
                 )
             }
         }
+    }
+
+    fun attachHost(activity: Activity) {
+        hostActivity = WeakReference(activity)
+    }
+
+    fun signIn() {
+        val state = ui.value ?: return
+        if (!state.canSignIn || state.signedIn || sessionBusy || gone) return
+        sessionBusy = true
+        val generation = ++signGeneration
+        signInJob = viewModelScope.launch {
+            if (generation != signGeneration) {
+                sessionBusy = false
+                return@launch
+            }
+            update {
+                it.copy(signingIn = true, promptText = "", promptQr = null, signInMessage = null)
+            }
+            val host = settingsHost(generation)
+            try {
+                val session = gate.withLock {
+                    if (gone || generation != signGeneration) null
+                    else withContext(Dispatchers.IO) { runSignIn(host) }
+                }
+                if (gone || generation != signGeneration) return@launch
+                if (session == null) {
+                    update { it.copy(signingIn = false, promptText = "", promptQr = null) }
+                    return@launch
+                }
+                if (!session.signedIn) {
+                    showSignInFailure(R.string.mygomusic_sign_in_failed)
+                    return@launch
+                }
+                update {
+                    it.copy(
+                        signingIn = false,
+                        promptText = "",
+                        promptQr = null,
+                        sessionReady = true,
+                        offersSignIn = session.offered,
+                        canSignIn = session.canSignIn,
+                        signedIn = session.signedIn,
+                        accountName = session.name,
+                    )
+                }
+            } catch (e: TimeoutCancellationException) {
+                if (generation == signGeneration) showSignInFailure(R.string.mygomusic_sign_in_timeout)
+            } catch (e: CancellationException) {
+                if (generation == signGeneration) {
+                    update { it.copy(signingIn = false, promptText = "", promptQr = null) }
+                }
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "signIn $pluginId", e)
+                if (generation == signGeneration) {
+                    val message = e.message?.trim().orEmpty().ifEmpty {
+                        getApplication<Application>().getString(R.string.mygomusic_sign_in_failed)
+                    }
+                    update {
+                        it.copy(
+                            signingIn = false,
+                            promptText = "",
+                            promptQr = null,
+                            signInMessage = message,
+                        )
+                    }
+                }
+            } finally {
+                if (generation == signGeneration) sessionBusy = false
+            }
+        }
+    }
+
+    fun cancelSignIn() {
+        if (signInJob?.isActive != true && ui.value?.signingIn != true) return
+        signGeneration++
+        signInJob?.cancel()
+        sessionBusy = false
+        update { it.copy(signingIn = false, promptText = "", promptQr = null) }
+    }
+
+    fun clearSignInMessage() {
+        update { it.copy(signInMessage = null) }
     }
 
     fun setEnabled(on: Boolean) {
@@ -188,7 +290,7 @@ class PluginSettingsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun delete(deleteData: Boolean) {
-        if (!started || gone || ui.value?.busy == true) return
+        if (!started || gone || ui.value?.busy == true || ui.value?.signingIn == true) return
         viewModelScope.launch {
             update { it.copy(busy = true, failure = false) }
             val ok = gate.withLock {
@@ -281,19 +383,33 @@ class PluginSettingsViewModel(app: Application) : AndroidViewModel(app) {
             throw e
         } catch (e: Exception) {
             Log.w(TAG, "account $id", e)
-            return PluginSession(false, false, "")
+            return PluginSession(false, false, false, "")
         }
         val offered = "signIn" in exports || "signOut" in exports || "account" in exports
-        if (!offered || "account" !in exports) return PluginSession(offered, false, "")
+        val canSignIn = "signIn" in exports
+        if (!offered || "account" !in exports) return PluginSession(offered, canSignIn, false, "")
         return try {
             val name = accountLabel(runtime.call("account"))
-            if (name == null) PluginSession(offered, false, "") else PluginSession(offered, true, name)
+            if (name == null) PluginSession(offered, canSignIn, false, "")
+            else PluginSession(offered, canSignIn, true, name)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.w(TAG, "account $id", e)
-            PluginSession(offered, false, "")
+            PluginSession(offered, canSignIn, false, "")
         }
+    }
+
+    private suspend fun runSignIn(host: PluginHost): PluginSession {
+        val dir = store.packageDir(pluginId)
+        val manifest = PluginManifest.read(dir)
+        val runtime = PluginRuntime(manifest, dir, store.dataDir(pluginId), locale(), host)
+        try {
+            runtime.call("signIn", timeoutMillis = SIGN_IN_TIMEOUT_MILLIS)
+        } catch (e: IllegalStateException) {
+            if (e.message != "plugin returned nothing") throw e
+        }
+        return readSession(pluginId)
     }
 
     private suspend fun runSignOut(): Boolean {
@@ -337,7 +453,52 @@ class PluginSettingsViewModel(app: Application) : AndroidViewModel(app) {
 
     private class SaveResult(val error: String?, val stored: Boolean)
 
-    private data class PluginSession(val offered: Boolean, val signedIn: Boolean, val name: String)
+    private data class PluginSession(
+        val offered: Boolean,
+        val canSignIn: Boolean,
+        val signedIn: Boolean,
+        val name: String,
+    )
+
+    private fun settingsHost(generation: Int): PluginHost {
+        return object : PluginHost {
+            override fun openUrl(url: String) {
+                if (generation != signGeneration) return
+                PluginWeb.open(hostContext(), url)
+            }
+
+            override fun signInPrompt(qr: String, text: String) {
+                if (generation != signGeneration) return
+                val bitmap = qrBitmap(qr)
+                viewModelScope.launch(Dispatchers.Main) {
+                    if (generation != signGeneration) return@launch
+                    update { it.copy(promptText = text, promptQr = bitmap, signingIn = true) }
+                }
+            }
+
+            override suspend fun webSignIn(request: WebSignInRequest): String {
+                if (generation != signGeneration) throw CancellationException()
+                return PluginWeb.signIn(hostContext(), request)
+            }
+        }
+    }
+
+    private fun hostContext(): android.content.Context {
+        val activity = hostActivity?.get()
+        if (activity != null && !activity.isDestroyed) return activity
+        return getApplication()
+    }
+
+    private fun showSignInFailure(message: Int) {
+        update {
+            it.copy(
+                signingIn = false,
+                promptText = "",
+                promptQr = null,
+                signInMessage = getApplication<Application>().getString(message),
+            )
+        }
+    }
 
     private companion object {
         const val TAG = "Mygomusic"

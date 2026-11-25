@@ -64,6 +64,7 @@
         android:supportsRtl="true"
         android:largeHeap="true"
         android:theme="@style/Theme.Gramophone"
+        android:networkSecurityConfig="@xml/mygomusic_network_security"
         android:windowSoftInputMode="adjustResize"
         tools:targetApi="upside_down_cake">
         <meta-data
@@ -324,6 +325,12 @@
         <activity
             android:name=".mygomusic.PluginSettingsActivity"
             android:exported="false" />
+
+        <activity
+            android:name=".mygomusic.PluginWebActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden"
+            android:windowSoftInputMode="adjustResize" />
 
         <activity
             android:name=".ui.fragments.settings.ContributorsSettingsActivity"

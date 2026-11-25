@@ -17,15 +17,12 @@
 
 package org.akanework.gramophone.mygomusic
 
-import android.content.ActivityNotFoundException
-import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.text.InputType
 import android.view.View
 import android.widget.CheckBox
+import android.widget.ImageView
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.core.os.ConfigurationCompat
 import androidx.appcompat.content.res.AppCompatResources
@@ -71,6 +68,10 @@ class PluginSettingsFragment : BasePreferenceFragment() {
     private var ioDialog: AlertDialog? = null
     private var saveDialog: AlertDialog? = null
     private var deleteDialog: AlertDialog? = null
+    private var promptDialog: AlertDialog? = null
+    private var promptImage: ImageView? = null
+    private var promptLabel: TextView? = null
+    private var signInDialog: AlertDialog? = null
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         preferenceScreen = preferenceManager.createPreferenceScreen(requireContext())
@@ -79,6 +80,7 @@ class PluginSettingsFragment : BasePreferenceFragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         attachMenu()
+        model.attachHost(requireActivity())
         model.ui.observe(viewLifecycleOwner) { render(it) }
         model.load(requireActivity().intent.getStringExtra(PluginSettingsActivity.EXTRA_ID).orEmpty())
     }
@@ -93,6 +95,8 @@ class PluginSettingsFragment : BasePreferenceFragment() {
         saveDialog = null
         deleteDialog?.dismiss()
         deleteDialog = null
+        dismissPrompt()
+        dismissSignInMessage()
         activity?.findViewById<MaterialToolbar>(R.id.topAppBar)?.let { bar ->
             bar.setOnMenuItemClickListener(null)
             bar.menu.clear()
@@ -112,7 +116,7 @@ class PluginSettingsFragment : BasePreferenceFragment() {
             built = true
             build(ui)
         }
-        controls.values.forEach { it.isEnabled = !ui.saving && ui.saveFailure == null }
+        controls.values.forEach { it.isEnabled = !ui.saving && !ui.signingIn && ui.saveFailure == null }
         if (ui.busy) {
             if (progressDialog?.isShowing != true) {
                 progressDialog = MaterialAlertDialogBuilder(requireContext())
@@ -126,6 +130,8 @@ class PluginSettingsFragment : BasePreferenceFragment() {
             progressDialog = null
         }
         if (ui.failure) showIoFailure() else dismissIo()
+        syncPrompt(ui)
+        if (ui.signInMessage == null) dismissSignInMessage() else showSignInMessage(ui.signInMessage)
         val save = ui.saveFailure
         if (save == null) dismissSave() else showSaveFailure(save)
         syncAccount(ui)
@@ -184,8 +190,10 @@ class PluginSettingsFragment : BasePreferenceFragment() {
         }
         pref.title = getString(if (ui.signedIn) R.string.mygomusic_sign_out else R.string.mygomusic_sign_in)
         pref.summary = ui.accountName.takeIf { ui.signedIn && it.isNotBlank() }
+        pref.isEnabled = !ui.saving && !ui.signingIn && ui.saveFailure == null &&
+            (ui.signedIn || ui.canSignIn)
         pref.onPreferenceClickListener = Preference.OnPreferenceClickListener {
-            if (ui.signedIn) model.signOut()
+            if (ui.signedIn) model.signOut() else model.signIn()
             true
         }
         if (existing == null) screen.addPreference(pref)
@@ -298,11 +306,7 @@ class PluginSettingsFragment : BasePreferenceFragment() {
             title = getString(R.string.mygomusic_plugin_link)
             summary = url
             setOnPreferenceClickListener {
-                try {
-                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                } catch (_: ActivityNotFoundException) {
-                    Toast.makeText(requireContext(), R.string.no_app_found, Toast.LENGTH_LONG).show()
-                }
+                PluginWeb.open(requireContext(), url)
                 true
             }
         }
@@ -384,13 +388,72 @@ class PluginSettingsFragment : BasePreferenceFragment() {
         ioDialog = null
     }
 
+    private fun syncPrompt(ui: PluginSettingsUi) {
+        if (!ui.signingIn) {
+            dismissPrompt()
+            return
+        }
+        if (promptDialog == null) {
+            val form = layoutInflater.inflate(R.layout.mygomusic_sign_in, null)
+            promptImage = form.findViewById(R.id.mygomusic_sign_in_qr)
+            promptLabel = form.findViewById(R.id.mygomusic_sign_in_text)
+            val dialog = MaterialAlertDialogBuilder(requireContext())
+                .setView(form)
+                .setNegativeButton(android.R.string.cancel) { _, _ -> model.cancelSignIn() }
+                .create()
+            dialog.setCanceledOnTouchOutside(false)
+            dialog.setOnCancelListener { model.cancelSignIn() }
+            dialog.setOnDismissListener {
+                if (promptDialog === dialog) {
+                    promptDialog = null
+                    promptImage = null
+                    promptLabel = null
+                }
+            }
+            promptDialog = dialog
+            dialog.show()
+        }
+        val qr = ui.promptQr
+        promptImage?.apply {
+            if (qr == null) {
+                setImageDrawable(null)
+                visibility = View.GONE
+            } else {
+                visibility = View.VISIBLE
+                setImageBitmap(qr)
+            }
+        }
+        promptLabel?.text = ui.promptText.ifBlank { getString(R.string.mygomusic_sign_in_waiting) }
+    }
+
+    private fun dismissPrompt() {
+        val dialog = promptDialog ?: return
+        dialog.setOnCancelListener(null)
+        dialog.dismiss()
+    }
+
+    private fun showSignInMessage(message: String) {
+        if (signInDialog?.isShowing == true) return
+        signInDialog = MaterialAlertDialogBuilder(requireContext())
+            .setMessage(message.ifBlank { getString(R.string.mygomusic_sign_in_failed) })
+            .setPositiveButton(android.R.string.ok) { _, _ -> model.clearSignInMessage() }
+            .setOnCancelListener { model.clearSignInMessage() }
+            .show()
+    }
+
+    private fun dismissSignInMessage() {
+        signInDialog?.setOnCancelListener(null)
+        signInDialog?.dismiss()
+        signInDialog = null
+    }
+
     private fun attachMenu() {
         val bar = requireActivity().findViewById<MaterialToolbar>(R.id.topAppBar) ?: return
         bar.menu.clear()
         bar.overflowIcon = AppCompatResources.getDrawable(requireContext(), R.drawable.ic_more_vert_alt_topappbar)
         bar.inflateMenu(R.menu.mygomusic_plugin_item)
         bar.setOnMenuItemClickListener { item ->
-            if (item.itemId == R.id.mygomusic_plugin_delete) confirmDelete()
+            if (item.itemId == R.id.mygomusic_plugin_delete && model.ui.value?.signingIn != true) confirmDelete()
             true
         }
     }

@@ -24,6 +24,8 @@ import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.Headers
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import android.util.Base64
+import okhttp3.MediaType
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -122,6 +124,7 @@ internal object PluginFetch {
     }
 
     private fun taken(response: Response): JsObject = response.use { resp ->
+        val payload = readBody(resp)
         val headers = LinkedHashMap<String, String>()
         for (i in 0 until resp.headers.size) {
             val name = resp.headers.name(i).lowercase()
@@ -136,14 +139,17 @@ internal object PluginFetch {
             "url" to resp.request.url.toString(),
             "headers" to headers.toJsObject(),
             "setCookie" to resp.headers.values("set-cookie"),
-            "body" to readBody(resp),
+            "body" to payload.text,
+            // Binary stays base64: the JS bridge carries strings, and a QR login reads arrayBuffer().
+            "bodyBase64" to payload.base64,
         ).toJsObject()
     }
 
-    private fun readBody(response: Response): String {
-        val body = response.body ?: return ""
-        val charset = body.contentType()?.charset(Charsets.UTF_8) ?: Charsets.UTF_8
-        body.byteStream().use { input ->
+    private fun readBody(response: Response): Payload {
+        val body = response.body ?: return Payload("", "")
+        val type = body.contentType()
+        val charset = type?.charset(Charsets.UTF_8) ?: Charsets.UTF_8
+        val bytes = body.byteStream().use { input ->
             val out = ByteArrayOutputStream()
             val buf = ByteArray(8192)
             var total = 0
@@ -154,9 +160,25 @@ internal object PluginFetch {
                 if (total > MAX_BODY) throw IOException("response is too large")
                 out.write(buf, 0, n)
             }
-            return String(out.toByteArray(), charset)
+            out.toByteArray()
+        }
+        return if (type != null && !textual(type)) {
+            Payload("", Base64.encodeToString(bytes, Base64.NO_WRAP))
+        } else {
+            Payload(String(bytes, charset), "")
         }
     }
+
+    private fun textual(type: MediaType): Boolean {
+        val sub = type.subtype.lowercase()
+        return type.type.equals("text", ignoreCase = true) ||
+            sub.contains("json") ||
+            sub.contains("javascript") ||
+            sub.contains("xml") ||
+            sub.contains("x-www-form-urlencoded")
+    }
+
+    private class Payload(val text: String, val base64: String)
 
     private suspend fun Request.await(): Response = suspendCancellableCoroutine { cont ->
         val call = client.newCall(this)
@@ -190,6 +212,8 @@ internal object PluginFetch {
         return trimmed
     }
 
+    fun allows(patterns: List<String>, host: String): Boolean = Allow(patterns).allows(host)
+
     private class Allow(patterns: List<String>) {
         private val all = patterns.any { it.trim() == "*" }
         private val exact = HashSet<String>()
@@ -206,13 +230,21 @@ internal object PluginFetch {
             }
         }
 
-        fun check(host: String, redirected: Boolean) {
-            if (all) return
+        fun allows(host: String): Boolean {
+            if (all) return true
             val name = host.lowercase()
-            if (name in exact) return
-            if (suffixes.any { name.length > it.length && name.endsWith(it) }) return
+            if (name in exact) return true
+            return suffixes.any { name.length > it.length && name.endsWith(it) }
+        }
+
+        fun check(host: String, redirected: Boolean) {
+            if (allows(host)) return
             val where = if (redirected) "redirected to host" else "host"
-            throw IllegalArgumentException("$where $name is not allowed")
+            throw IllegalArgumentException("$where ${host.lowercase()} is not allowed")
         }
     }
+}
+
+internal fun networkAllows(patterns: List<String>, host: String): Boolean {
+    return PluginFetch.allows(patterns, host)
 }

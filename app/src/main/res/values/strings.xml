@@ -341,8 +341,14 @@
     <string name="mygomusic_stream_only">This app only plays plugins that stream audio.</string>
     <string name="mygomusic_open_settings">Plugin settings</string>
     <string name="mygomusic_sign_in">Sign in</string>
-    <!-- Signed-in state of the plugin account row. Tap signs out. Signing in is not wired yet. -->
+    <!-- Signed-in state of the plugin account row. Tap signs out. -->
     <string name="mygomusic_sign_out">Sign out</string>
+    <string name="mygomusic_sign_in_waiting">Waiting for you to finish signing in…</string>
+    <string name="mygomusic_sign_in_failed">Couldn\'t sign in.</string>
+    <string name="mygomusic_sign_in_closed">The sign-in page was closed before it finished.</string>
+    <string name="mygomusic_sign_in_timeout">Signing in took too long. Try again.</string>
+    <string name="mygomusic_sign_in_no_page">This device can\'t show the sign-in page.</string>
+    <string name="mygomusic_sign_in_qr">QR code</string>
     <!-- Dialog text when sign-in is required and the plugin gave no message -->
     <string name="mygomusic_needs_sign_in">Sign in to see this.</string>
     <!-- Dialog text when setup is required and the plugin gave no message -->
