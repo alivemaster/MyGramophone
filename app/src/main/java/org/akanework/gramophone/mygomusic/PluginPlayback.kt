@@ -26,13 +26,28 @@ import org.akanework.gramophone.logic.setMediaItemsSeamlessly
 import org.akanework.gramophone.logic.setMediaItemsWithTitle
 import org.akanework.gramophone.ui.MainActivity
 
+internal const val PLAY_SCHEME = "mygramophone"
+
 internal fun pluginMediaId(pluginId: String, trackId: String): String {
     return "plugin:${Uri.encode(pluginId)}:${Uri.encode(trackId)}"
 }
 
+internal fun playUri(pluginId: String, trackId: String): Uri {
+    return "$PLAY_SCHEME://play/${Uri.encode(pluginId)}/${Uri.encode(trackId)}".toUri()
+}
+
+/** Path segments are decoded, so a slash inside an id survives as one segment. */
+internal fun parsePlayUri(uri: Uri): Pair<String, String>? {
+    if (uri.scheme != PLAY_SCHEME || uri.host != "play") return null
+    val parts = uri.pathSegments
+    if (parts.size != 2) return null
+    val pluginId = parts[0]
+    val trackId = parts[1]
+    if (!isPluginId(pluginId) || trackId.isEmpty()) return null
+    return pluginId to trackId
+}
+
 internal fun PluginTrack.toMediaItem(pluginId: String): MediaItem {
-    val plugin = Uri.encode(pluginId)
-    val track = Uri.encode(id)
     // Both ids are percent-encoded so a ':' inside either one cannot split mediaId.
     val metadata = MediaMetadata.Builder()
         .setTitle(name)
@@ -43,7 +58,7 @@ internal fun PluginTrack.toMediaItem(pluginId: String): MediaItem {
     return MediaItem.Builder()
         .setMediaId(pluginMediaId(pluginId, id))
         // localConfiguration makes the queue keep this item. The stream URL is filled in when it plays.
-        .setUri("mygramophone://play/$plugin/$track".toUri())
+        .setUri(playUri(pluginId, id))
         .setMediaMetadata(metadata)
         .build()
 }

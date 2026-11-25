@@ -38,6 +38,18 @@
         <item>1</item>
     </string-array>
 
+    <string-array name="mygomusic_quality">
+        <item>@string/mygomusic_quality_standard</item>
+        <item>@string/mygomusic_quality_high</item>
+        <item>@string/mygomusic_quality_lossless</item>
+    </string-array>
+
+    <string-array name="mygomusic_quality_val" translatable="false">
+        <item>standard</item>
+        <item>high</item>
+        <item>lossless</item>
+    </string-array>
+
     <string-array name="shuffle_all_queries" translatable="false">
         <item>@string/actions_query_shuffle_all_songs</item>
         <item>@string/actions_query_shuffle_everything</item>

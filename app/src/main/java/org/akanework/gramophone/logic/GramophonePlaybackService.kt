@@ -68,7 +68,6 @@ import androidx.media3.common.util.BitmapLoader
 import androidx.media3.common.util.Log
 import androidx.media3.common.util.Util
 import androidx.media3.common.util.Util.isBitmapFactorySupportedMimeType
-import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
@@ -115,6 +114,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.guava.future
 import kotlinx.coroutines.guava.await
 import org.akanework.gramophone.R
+import org.akanework.gramophone.mygomusic.PluginDataSource
 import org.akanework.gramophone.logic.ui.MeiZuLyricsMediaNotificationProvider
 import org.akanework.gramophone.logic.ui.isManualNotificationUpdate
 import org.akanework.gramophone.logic.utils.AfFormatInfo
@@ -421,7 +421,7 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
                     .setEnableAudioOutputPlaybackParameters(true)
                     .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON),
                 GramophoneMediaSourceFactory(
-                    DefaultDataSource.Factory(this),
+                    PluginDataSource.Factory(this),
                     GramophoneExtractorsFactory().also {
                         it.setConstantBitrateSeekingEnabled(true)
                         it.setMp3ExtractorFlags(Mp3Extractor.FLAG_ENABLE_INDEX_SEEKING)
@@ -1574,6 +1574,11 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
     }
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+        if (mediaItem?.localConfiguration?.uri?.scheme == "mygramophone") {
+            lifecycleScope.launch(Dispatchers.IO) {
+                PluginDataSource.played(this@GramophonePlaybackService, mediaItem)
+            }
+        }
         if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) {
             bitrate = null
             bitrateFetcher.launch {

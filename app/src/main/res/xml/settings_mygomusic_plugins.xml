@@ -27,6 +27,16 @@
         android:widgetLayout="@layout/preference_switch_widget"
         app:iconSpaceReserved="false" />
 
+    <ListPreference
+        android:defaultValue="high"
+        android:entries="@array/mygomusic_quality"
+        android:entryValues="@array/mygomusic_quality_val"
+        android:key="mygomusic_quality"
+        android:layout="@layout/preference_basic"
+        android:title="@string/mygomusic_quality"
+        app:iconSpaceReserved="false"
+        app:useSimpleSummaryProvider="true" />
+
     <PreferenceCategory
         android:key="mygomusic_plugin_list"
         android:layout="@layout/preference_category_md"

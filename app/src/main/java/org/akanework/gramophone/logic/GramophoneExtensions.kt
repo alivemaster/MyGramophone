@@ -137,6 +137,7 @@ fun MediaItem.requireMediaStoreId(): Long {
 fun MediaItem.getBitrate(context: Context): Int? {
     val retriever = MediaMetadataRetriever()
     val uri = localConfiguration?.uri ?: return null
+    if (uri.scheme == "mygramophone") return null
     return try {
         retriever.setDataSource(context, uri)
         retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)

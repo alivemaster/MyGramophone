@@ -55,6 +55,7 @@ internal class PluginRowsAdapter(
     private val context = fragment.requireContext()
     private val store by lazy { PluginStore(context) }
     private var rules: List<PluginHeaderRule> = emptyList()
+    private var network: List<String> = emptyList()
     private var entries: List<Entry> = emptyList()
     private var tracks: List<PluginTrack> = emptyList()
     private var currentMediaItem: String? = null
@@ -96,7 +97,7 @@ internal class PluginRowsAdapter(
     }
 
     fun submitGroups(groups: List<PluginGroup>) {
-        rules = headerRules()
+        loadHeaders()
         tracks = emptyList()
         val rows = groups.sumOf { it.rows.size }
         entries = buildList {
@@ -114,7 +115,7 @@ internal class PluginRowsAdapter(
     }
 
     fun submitTracks(list: List<PluginTrack>) {
-        rules = headerRules()
+        loadHeaders()
         tracks = list
         entries = buildList {
             if (list.isNotEmpty()) add(Entry.Decor(list.size, true))
@@ -257,20 +258,23 @@ internal class PluginRowsAdapter(
             error(placeholder)
             if (sized != null && rules.isNotEmpty()) {
                 httpHeaders(allowDiskAccessInStrictMode {
-                    PluginCovers.headers(rules, PluginRecords(store.dataDir(pluginId)), sized)
+                    PluginCovers.headers(rules, PluginRecords(store.dataDir(pluginId)), sized, network)
                 })
             }
         }
     }
 
-    private fun headerRules(): List<PluginHeaderRule> {
-        return allowDiskAccessInStrictMode {
+    private fun loadHeaders() {
+        val loaded = allowDiskAccessInStrictMode {
             try {
-                PluginManifest.read(store.packageDir(pluginId)).headerRules
+                val manifest = PluginManifest.read(store.packageDir(pluginId))
+                manifest.headerRules to manifest.network
             } catch (_: Exception) {
-                emptyList()
+                emptyList<PluginHeaderRule>() to emptyList()
             }
         }
+        rules = loaded.first
+        network = loaded.second
     }
 
     private fun notifyPlaying() {

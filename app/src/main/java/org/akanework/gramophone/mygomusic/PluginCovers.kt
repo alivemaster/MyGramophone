@@ -37,33 +37,76 @@ internal object PluginCovers {
             .replace("%7Bsize%7D", pixels.toString(), ignoreCase = true)
     }
 
-    fun headers(rules: List<PluginHeaderRule>, records: PluginRecords, url: String): NetworkHeaders {
-        val host = runCatching { Uri.parse(url).host }.getOrNull()?.lowercase()
-            ?: return NetworkHeaders.Builder().build()
+    fun headers(
+        rules: List<PluginHeaderRule>,
+        records: PluginRecords,
+        url: String,
+        network: List<String>,
+    ): NetworkHeaders {
         val builder = NetworkHeaders.Builder()
-        for (rule in rules) {
-            if (rule.kinds.isNotEmpty() && "image" !in rule.kinds) continue
-            if (rule.hosts.none { hostMatches(it, host, records) }) continue
-            for ((name, template) in rule.headers) {
-                val value = substitute(template, records)
-                if (name.isEmpty() || value.isEmpty()) continue
-                builder.set(name, value)
-            }
+        for ((name, value) in headerMap(rules, records, url, "image", network)) {
+            builder.set(name, value)
         }
         return builder.build()
     }
+
+    /** First rule to set a name wins. An empty placeholder or a line break drops that header. */
+    fun headerMap(
+        rules: List<PluginHeaderRule>,
+        records: PluginRecords,
+        url: String,
+        kind: String,
+        network: List<String>,
+    ): Map<String, String> {
+        val parsed = runCatching { Uri.parse(url) }.getOrNull() ?: return emptyMap()
+        val scheme = parsed.scheme?.lowercase()
+        if (scheme != "http" && scheme != "https") return emptyMap()
+        val host = parsed.host?.lowercase() ?: return emptyMap()
+        val out = LinkedHashMap<String, String>()
+        for (rule in rules) {
+            if (rule.kinds.isNotEmpty() && kind !in rule.kinds) continue
+            if (rule.hosts.none { hostMatches(it, host, records, network) }) continue
+            for ((name, template) in rule.headers) {
+                if (name.isEmpty() || out.keys.any { it.equals(name, ignoreCase = true) }) continue
+                if (name.equals("host", true) || name.equals("content-length", true)) continue
+                val value = substitute(template, records)
+                if (value.isEmpty()) continue
+                out[name] = value
+            }
+        }
+        return out
+    }
 }
 
-private fun hostMatches(pattern: String, host: String, records: PluginRecords): Boolean {
+private fun hostMatches(
+    pattern: String,
+    host: String,
+    records: PluginRecords,
+    network: List<String>,
+): Boolean {
     if (pattern.startsWith("{setting:") && pattern.endsWith("}")) {
         val key = pattern.removePrefix("{setting:").removeSuffix("}")
-        return settingHost(records, key) == host
+        val named = settingHost(records, key) ?: return false
+        return named == host && networkReaches(network, host)
     }
     val rule = pattern.lowercase()
     if (rule == host) return true
     if (rule.startsWith("*.")) {
         val suffix = rule.removePrefix("*")
         return host.endsWith(suffix) && host.length > suffix.length
+    }
+    return false
+}
+
+internal fun networkReaches(network: List<String>, host: String): Boolean {
+    val wanted = host.lowercase()
+    for (raw in network) {
+        val rule = raw.lowercase()
+        if (rule == "*" || rule == wanted) return true
+        if (rule.startsWith("*.")) {
+            val suffix = rule.removePrefix("*")
+            if (wanted.endsWith(suffix) && wanted.length > suffix.length) return true
+        }
     }
     return false
 }
@@ -75,11 +118,20 @@ private fun settingHost(records: PluginRecords, key: String): String? {
     return runCatching { Uri.parse(withScheme).host }.getOrNull()?.lowercase()
 }
 
+private val placeholder = Regex("\\{(setting|storage):([^{}]+)}")
+
 private fun substitute(template: String, records: PluginRecords): String {
-    val setting = Regex("\\{setting:([^{}]+)}")
-    val storage = Regex("\\{storage:([^{}]+)}")
-    val withSettings = setting.replace(template) { records.setting(it.groupValues[1]) }
-    return storage.replace(withSettings) { storageText(records, it.groupValues[1]) }
+    var missing = false
+    val filled = placeholder.replace(template) { match ->
+        val value = when (match.groupValues[1]) {
+            "setting" -> records.setting(match.groupValues[2])
+            else -> storageText(records, match.groupValues[2])
+        }
+        if (value.isEmpty()) missing = true
+        value
+    }
+    if (missing || filled.any { it == '\r' || it == '\n' }) return ""
+    return filled
 }
 
 private fun storageText(records: PluginRecords, key: String): String {
@@ -95,9 +147,9 @@ private fun storageText(records: PluginRecords, key: String): String {
 }
 
 /**
- * Headers from plugin.json are for the host in the rule. OkHttp copies them
- * onto a redirect; drop those names when the host changes. Stream headers
- * follow the same rule once playback sends them through this client.
+ * Picture headers are for the host in the rule. OkHttp copies them onto a
+ * redirect; drop those names when the host changes. Audio uses the player
+ * client instead, which keeps a header on a child of the original host.
  */
 private class CrossHostStripper : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {

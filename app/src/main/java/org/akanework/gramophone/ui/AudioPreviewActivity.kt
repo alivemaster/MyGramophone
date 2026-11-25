@@ -48,7 +48,6 @@ import androidx.media3.common.Timeline
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.util.ExperimentalApi
 import androidx.media3.common.util.Log
-import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
@@ -64,6 +63,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.akanework.gramophone.R
+import org.akanework.gramophone.mygomusic.PluginDataSource
 import org.akanework.gramophone.logic.getBooleanStrict
 import org.akanework.gramophone.logic.getStringStrict
 import org.akanework.gramophone.logic.hasAudioPermission
@@ -191,7 +191,7 @@ class AudioPreviewActivity : BaseActivity(), View.OnClickListener {
                 .setEnableAudioOutputPlaybackParameters(true)
                 .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER),
             GramophoneMediaSourceFactory(
-                DefaultDataSource.Factory(this),
+                PluginDataSource.Factory(this),
                 GramophoneExtractorsFactory().also {
                     it.setConstantBitrateSeekingEnabled(true)
                     it.setMp3ExtractorFlags(Mp3Extractor.FLAG_ENABLE_INDEX_SEEKING)
