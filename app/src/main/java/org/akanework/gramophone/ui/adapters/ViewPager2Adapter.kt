@@ -20,7 +20,9 @@ package org.akanework.gramophone.ui.adapters
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
+import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentManager
@@ -32,10 +34,16 @@ import androidx.viewpager2.adapter.FragmentStateAdapter
 import androidx.viewpager2.widget.ViewPager2
 import com.google.android.material.tabs.TabLayout
 import org.akanework.gramophone.R
+import org.akanework.gramophone.logic.allowDiskAccessInStrictMode
 import org.akanework.gramophone.logic.getStringStrict
 import org.akanework.gramophone.logic.hasImprovedMediaStore
+import org.akanework.gramophone.mygomusic.PLUGIN_TAB_MARK
+import org.akanework.gramophone.mygomusic.PluginPlaylistFragment
+import org.akanework.gramophone.mygomusic.PluginStore
+import org.akanework.gramophone.mygomusic.pluginTabId
 import org.akanework.gramophone.ui.MainActivity
 import org.akanework.gramophone.ui.fragments.AdapterFragment
+import java.util.Locale
 
 /**
  * This is the ViewPager2 adapter.
@@ -50,6 +58,7 @@ class ViewPager2Adapter(
 
     private val prefs = PreferenceManager.getDefaultSharedPreferences(context.applicationContext)
     private var tabs = mapSettingToTabList(prefs.getStringStrict("tabs", "")!!)
+    private var pluginTabs = readPluginTabs()
 
     init {
         prefs.registerOnSharedPreferenceChangeListener(this)
@@ -62,17 +71,81 @@ class ViewPager2Adapter(
 
     @SuppressLint("NotifyDataSetChanged")
     override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
-        if (key != "tabs") return
-        val currentItemId = tabs[viewPager2.currentItem]
-        tabs = mapSettingToTabList(prefs.getStringStrict("tabs", "")!!)
-        viewPager2.adapter!!.notifyDataSetChanged()
-        if (tabs.contains(currentItemId)) {
-            val newPosition = tabs.indexOfFirst { it == currentItemId }
-            viewPager2.setCurrentItem(newPosition, false)
+        when (key) {
+            "tabs" -> apply(mapSettingToTabList(prefs.getStringStrict("tabs", "")!!), readPluginTabs())
+            "mygomusic_plugins" -> refreshPlugins()
         }
+    }
 
+    /** Installed plugins are not stored in the tab-order setting. */
+    @SuppressLint("NotifyDataSetChanged")
+    fun refreshPlugins() {
+        val next = readPluginTabs()
+        if (next == pluginTabs) return
+        apply(null, next)
+    }
+
+    @SuppressLint("NotifyDataSetChanged")
+    private fun apply(newTabs: List<Tab?>?, newPlugins: List<PluginTab>?) {
+        val current = if (itemCount > 0 && viewPager2.currentItem in 0 until itemCount) {
+            getItemId(viewPager2.currentItem)
+        } else {
+            null
+        }
+        if (newTabs != null) tabs = newTabs
+        if (newPlugins != null) pluginTabs = newPlugins
+        viewPager2.adapter!!.notifyDataSetChanged()
+        if (current != null) {
+            val index = (0 until itemCount).indexOfFirst { getItemId(it) == current }
+            if (index >= 0) viewPager2.setCurrentItem(index, false)
+        }
+        updateTabVisibility()
+    }
+
+    fun label(position: Int): String {
+        val local = visibleLocalCount()
+        return if (position < local) context.getString(tabs[position]!!.label)
+        else pluginTabs[position - local].title
+    }
+
+    override fun getItemCount() = visibleLocalCount() + pluginTabs.size
+
+    override fun createFragment(position: Int): Fragment {
+        val local = visibleLocalCount()
+        if (position < local) {
+            return AdapterFragment().apply {
+                arguments = Bundle().apply {
+                    putInt("ID", tabs[position]!!.id)
+                }
+            }
+        }
+        return PluginPlaylistFragment().apply {
+            arguments = Bundle().apply {
+                putString(PluginPlaylistFragment.ARG_PLUGIN, pluginTabs[position - local].id)
+            }
+        }
+    }
+
+    override fun getItemId(position: Int): Long {
+        val local = visibleLocalCount()
+        return if (position < local) tabs[position]!!.id.toLong()
+        else pluginTabId(pluginTabs[position - local].id)
+    }
+
+    override fun containsItem(itemId: Long): Boolean {
+        if (itemId and PLUGIN_TAB_MARK != 0L) return pluginTabs.any { pluginTabId(it.id) == itemId }
+        return tabs.any { it?.id?.toLong() == itemId }
+    }
+
+    private fun visibleLocalCount(): Int {
+        val index = tabs.indexOf(null)
+        if (index == -1) throw IllegalStateException("indexOf null is -1 in tab list?")
+        return index
+    }
+
+    private fun updateTabVisibility() {
         val tabLayout = (context as? MainActivity)?.findViewById<TabLayout>(R.id.tab_layout)
-        if (getItemCount() < 2) {
+        if (itemCount < 2) {
             tabLayout?.visibility = View.GONE
             viewPager2.isUserInputEnabled = false
         } else {
@@ -81,25 +154,31 @@ class ViewPager2Adapter(
         }
     }
 
-    fun getLabelResId(position: Int) = tabs[position]!!.label
-
-    override fun getItemCount() = tabs.indexOf(null)
-        .also { if (it == -1) throw IllegalStateException("indexOf null is -1 in tab list?") }
-
-    override fun createFragment(position: Int): Fragment =
-        AdapterFragment().apply {
-            arguments = Bundle().apply {
-                putInt("ID", tabs[position]!!.id)
+    private fun readPluginTabs(): List<PluginTab> {
+        if (!prefs.getBoolean("mygomusic_plugins", false)) return emptyList()
+        // Listing the plugin directory is a disk read. The pager has to update on the main thread.
+        return allowDiskAccessInStrictMode {
+            try {
+                PluginStore(context).list(uiLocale()).filter { !it.broken }
+                    .map { PluginTab(it.directoryName, it.title) }
+            } catch (e: Exception) {
+                Log.w("ViewPager2Adapter", "plugins", e)
+                emptyList()
             }
         }
-
-    override fun getItemId(position: Int): Long {
-        return tabs[position]!!.id.toLong()
     }
 
-    override fun containsItem(itemId: Long): Boolean {
-        return tabs.any { it?.id?.toLong() == itemId }
+    private fun uiLocale(): Locale {
+        val config = context.resources.configuration
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            config.locales[0]
+        } else {
+            @Suppress("DEPRECATION")
+            config.locale
+        }
     }
+
+    private data class PluginTab(val id: String, val title: String)
 
     companion object {
         enum class Tab(val id: Int, val label: Int) {

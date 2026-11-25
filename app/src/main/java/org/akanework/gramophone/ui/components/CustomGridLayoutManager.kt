@@ -23,6 +23,7 @@ import androidx.recyclerview.widget.ConcatAdapter
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.recyclerview.widget.getRecyclerView
+import org.akanework.gramophone.mygomusic.PluginRowsAdapter
 import org.akanework.gramophone.ui.adapters.BaseAdapter
 import org.akanework.gramophone.ui.adapters.BaseDecorAdapter
 import org.akanework.gramophone.ui.adapters.DetailedFolderAdapter
@@ -95,6 +96,10 @@ class CustomGridLayoutManager(
                             adapter.getSpanSize()
                         }
 
+                        is PluginRowsAdapter -> {
+                            if (adapter.fullSpan(pos)) spanCount else adapter.spanSize()
+                        }
+
                         else -> {
                             throw IllegalStateException("unsupported adapter ${adapter.javaClass.name}")
                         }
@@ -115,6 +120,21 @@ class CustomGridLayoutManager(
                         is BaseAdapter<*> -> {
                             val spanSize = adapter.getSpanSize()
                             (pos % (spanCount / spanSize)) * spanSize
+                        }
+
+                        is PluginRowsAdapter -> {
+                            if (adapter.fullSpan(pos)) {
+                                0
+                            } else {
+                                var column = 0
+                                var index = pos
+                                while (index >= 0 && !adapter.fullSpan(index)) {
+                                    column++
+                                    index--
+                                }
+                                val spanSize = adapter.spanSize()
+                                ((column - 1) % (spanCount / spanSize)) * spanSize
+                            }
                         }
 
                         else -> {

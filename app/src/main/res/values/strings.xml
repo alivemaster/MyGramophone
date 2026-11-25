@@ -325,6 +325,19 @@
     <string name="mygomusic_plugin_error_github">GitHub could not be reached</string>
     <!-- Summary when plugin.json has no version -->
     <string name="mygomusic_plugin_version_unknown">Unknown version</string>
+    <string name="mygomusic_my_playlists">My playlists</string>
+    <string name="mygomusic_saved_playlists">Saved playlists</string>
+    <string name="mygomusic_empty">Nothing to list</string>
+    <string name="mygomusic_stream_only">This app only plays plugins that stream audio.</string>
+    <string name="mygomusic_open_settings">Plugin settings</string>
+    <string name="mygomusic_sign_in">Sign in</string>
+    <string name="mygomusic_unsave">Remove from saved</string>
+    <string name="mygomusic_home">Home</string>
+    <string name="mygomusic_liked">Liked songs</string>
+    <string name="mygomusic_saved_albums">Saved albums</string>
+    <string name="mygomusic_stations">Radio</string>
+    <string name="mygomusic_shows">Podcasts</string>
+    <string name="mygomusic_plugin_failed">The plugin could not load this list.</string>
     <!-- Toggle which makes color detection for album cover based color use more CPU to detect the
     color, which improves accuracy but causes some lags on old devices. Subtext -->
     <string name="settings_color_accuracy_summary">Make color generation accurate</string>

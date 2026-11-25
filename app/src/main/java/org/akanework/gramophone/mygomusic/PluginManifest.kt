@@ -88,32 +88,51 @@ internal fun File.isInside(root: File): Boolean {
     }
 }
 
+data class PluginNav(
+    val title: String,
+    val page: String,
+    val builtin: String,
+)
+
+/** [kinds] empty means the headers go with both pictures and audio. */
+data class PluginHeaderRule(
+    val hosts: List<String>,
+    val kinds: List<String>,
+    val headers: Map<String, String>,
+)
+
 data class PluginManifest(
     val id: String,
     val name: String,
     val version: String,
     val main: String,
     val minAppVersion: String?,
+    val playback: String?,
     val network: List<String>,
     val process: List<String>,
+    val navigation: List<PluginNav>,
+    val headerRules: List<PluginHeaderRule>,
     val locales: Map<String, Map<String, String>>,
 ) {
-    fun title(locale: Locale): String {
+    fun text(locale: Locale, source: String): String {
+        if (source.isEmpty()) return source
         val tags = listOf(
             locale.toLanguageTag(),
             listOf(locale.language, locale.country).filter { it.isNotEmpty() }.joinToString("-"),
             locale.language,
         ).distinct()
         for (tag in tags) {
-            val hit = locales[tag]?.get(name)
+            val hit = locales[tag]?.get(source)
             if (!hit.isNullOrEmpty()) return hit
         }
         if (locale.language.equals("zh", ignoreCase = true)) {
-            val hit = locales["zh-CN"]?.get(name)
+            val hit = locales["zh-CN"]?.get(source)
             if (!hit.isNullOrEmpty()) return hit
         }
-        return name
+        return source
     }
+
+    fun title(locale: Locale): String = text(locale, name)
 
     companion object {
         fun read(root: File): PluginManifest {
@@ -152,16 +171,26 @@ data class PluginManifest(
             if (obj.has("requestHeaders") && obj.optJSONArray("requestHeaders") == null) {
                 throw PluginPackageException(PluginFailureKind.BadManifest)
             }
+            if (obj.has("navigation") && !obj.isNull("navigation") && obj.optJSONArray("navigation") == null) {
+                throw PluginPackageException(PluginFailureKind.BadManifest)
+            }
             val (network, process) = permissions(obj.optJSONObject("permissions"))
-            checkRequestHeaders(network, obj.optJSONArray("requestHeaders"))
+            val playback = if (!obj.has("playback") || obj.isNull("playback")) {
+                null
+            } else {
+                optionalString(obj, "playback")
+            }
             return PluginManifest(
                 id = id,
                 name = name,
                 version = version,
                 main = main,
                 minAppVersion = minAppVersion,
+                playback = playback,
                 network = network,
                 process = process,
+                navigation = navigation(obj.optJSONArray("navigation")),
+                headerRules = headerRules(network, obj.optJSONArray("requestHeaders")),
                 locales = locales(root),
             )
         }
@@ -196,48 +225,74 @@ data class PluginManifest(
             return network to process
         }
 
-        private fun checkRequestHeaders(network: List<String>, rules: JSONArray?) {
-            if (rules == null) return
+        private fun navigation(arr: JSONArray?): List<PluginNav> {
+            if (arr == null) return emptyList()
+            val out = mutableListOf<PluginNav>()
+            for (i in 0 until arr.length()) {
+                val item = arr.optJSONObject(i)
+                    ?: throw PluginPackageException(PluginFailureKind.BadManifest)
+                val title = optionalString(item, "title") ?: ""
+                val page = optionalString(item, "page") ?: ""
+                val builtin = optionalString(item, "builtin") ?: ""
+                if (page.isEmpty() && builtin.isEmpty()) {
+                    throw PluginPackageException(PluginFailureKind.BadManifest)
+                }
+                out += PluginNav(title, page, builtin)
+            }
+            return out
+        }
+
+        private fun headerRules(network: List<String>, rules: JSONArray?): List<PluginHeaderRule> {
+            if (rules == null) return emptyList()
+            val out = mutableListOf<PluginHeaderRule>()
             for (i in 0 until rules.length()) {
                 val rule = rules.optJSONObject(i)
                     ?: throw PluginPackageException(PluginFailureKind.BadManifest)
-                val hosts = rule.optJSONArray("hosts")
+                val hostArr = rule.optJSONArray("hosts")
                     ?: throw PluginPackageException(PluginFailureKind.BadManifest)
-                val headers = rule.optJSONObject("headers")
+                val headerObj = rule.optJSONObject("headers")
                     ?: throw PluginPackageException(PluginFailureKind.BadManifest)
-                if (hosts.length() == 0 || headers.length() == 0) {
+                if (hostArr.length() == 0 || headerObj.length() == 0) {
                     throw PluginPackageException(PluginFailureKind.BadManifest)
                 }
-                val kinds = rule.optJSONArray("kinds")
-                if (kinds != null) {
-                    for (k in 0 until kinds.length()) {
-                        val kind = kinds.optString(k)
+                val kinds = mutableListOf<String>()
+                val kindArr = rule.optJSONArray("kinds")
+                if (kindArr != null) {
+                    for (k in 0 until kindArr.length()) {
+                        val kind = kindArr.optString(k)
                         if (kind != "image" && kind != "audio") {
                             throw PluginPackageException(PluginFailureKind.BadManifest)
                         }
+                        kinds += kind
                     }
                 }
-                for (h in 0 until hosts.length()) {
-                    val host = hosts.optString(h)
+                val hosts = mutableListOf<String>()
+                for (h in 0 until hostArr.length()) {
+                    val host = hostArr.optString(h)
                     if (host.startsWith("{setting:") && host.endsWith("}")) {
                         val key = host.removePrefix("{setting:").removeSuffix("}")
                         if (key.isEmpty() || key.contains('{') || key.contains('}')) {
                             throw PluginPackageException(PluginFailureKind.BadManifest)
                         }
-                        continue
-                    }
-                    if (host == "*" || host.any { it in "{}/:" } || !covers(network, host)) {
+                    } else if (host == "*" || host.any { it in "{}/:" } || !covers(network, host)) {
                         throw PluginPackageException(PluginFailureKind.BadManifest)
                     }
+                    hosts += host
                 }
-                val names = headers.keys()
+                val headers = linkedMapOf<String, String>()
+                val names = headerObj.keys()
                 while (names.hasNext()) {
                     val name = names.next()
                     if (name.equals("host", true) || name.equals("content-length", true)) {
                         throw PluginPackageException(PluginFailureKind.BadManifest)
                     }
+                    val value = headerObj.opt(name)
+                    if (value !is String) throw PluginPackageException(PluginFailureKind.BadManifest)
+                    headers[name] = value
                 }
+                out += PluginHeaderRule(hosts, kinds, headers)
             }
+            return out
         }
 
         private fun covers(network: List<String>, pattern: String): Boolean {

@@ -53,6 +53,7 @@ import org.akanework.gramophone.logic.enableEdgeToEdgePaddingListener
 import org.akanework.gramophone.logic.needsManualSnackBarInset
 import org.akanework.gramophone.logic.updateMargin
 import org.akanework.gramophone.logic.utils.SdScanner
+import org.akanework.gramophone.mygomusic.PluginPlaylistFragment
 import org.akanework.gramophone.logic.setMediaItemsWithTitle
 import org.akanework.gramophone.ui.MainActivity
 import org.akanework.gramophone.ui.adapters.ViewPager2Adapter
@@ -224,7 +225,7 @@ class ViewPagerFragment : BaseFragment(true) {
         viewPager2.adapter = adapter
 
         TabLayoutMediator(tabLayout, viewPager2) { tab, position ->
-            tab.text = getString(adapter.getLabelResId(position))
+            tab.text = adapter.label(position)
             tab.view.post {
                 try {
                     /*
@@ -252,9 +253,11 @@ class ViewPagerFragment : BaseFragment(true) {
             }
 
             override fun onTabReselected(p0: TabLayout.Tab?) {
-                if (p0 != null)
-                    (childFragmentManager.findFragmentByTag("f${adapter.getItemId(p0.position)}")
-                            as AdapterFragment?)?.onTabReselected()
+                if (p0 == null) return
+                when (val page = childFragmentManager.findFragmentByTag("f${adapter.getItemId(p0.position)}")) {
+                    is AdapterFragment -> page.onTabReselected()
+                    is PluginPlaylistFragment -> page.onTabReselected()
+                }
             }
         })
 
@@ -267,6 +270,11 @@ class ViewPagerFragment : BaseFragment(true) {
         }
 
         return rootView
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::adapter.isInitialized) adapter.refreshPlugins()
     }
 
     fun maybeReportFullyDrawn(itemId: Int) {

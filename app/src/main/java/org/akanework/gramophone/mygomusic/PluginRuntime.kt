@@ -38,6 +38,11 @@ import javax.crypto.spec.SecretKeySpec
  * quickjs-kt 1.0.5 counts [MEMORY_LIMIT_BYTES] in bytes and has no
  * evaluation timeout, so the coroutine timeout is the call limit.
  */
+class PluginCallException(
+    val code: String,
+    message: String,
+) : Exception(message)
+
 class PluginRuntime(
     private val manifest: PluginManifest,
     private val pluginDir: File,
@@ -51,6 +56,23 @@ class PluginRuntime(
     ): Any? {
         require(EXPORT_NAME.matches(exportName)) { exportName }
         val specifier = moduleSpecifier(manifest.main)
+        return evaluate(caller(specifier), exportName, args, timeoutMillis)
+    }
+
+    suspend fun exports(): Set<String> {
+        val specifier = moduleSpecifier(manifest.main)
+        val value = evaluate(exportList(specifier), "exports", null, CALL_TIMEOUT_MILLIS)
+        val names = value as? List<*> ?: return emptySet()
+        return names.mapNotNull { it as? String }.toSet()
+    }
+
+    private suspend fun evaluate(
+        script: String,
+        exportName: String,
+        args: Map<String, Any?>?,
+        timeoutMillis: Long,
+    ): Any? {
+        val specifier = moduleSpecifier(manifest.main)
         val source = readModule(specifier)
         val dirPath = pluginDir.canonicalFile.path
         val dataPath = dataDir.canonicalFile.apply { mkdirs() }.path
@@ -61,6 +83,7 @@ class PluginRuntime(
             withTimeout(timeoutMillis) {
                 var captured: Any? = null
                 var saw = false
+                var failure: PluginCallException? = null
                 quickJs {
                     memoryLimit = MEMORY_LIMIT_BYTES
                     define("console") {
@@ -116,6 +139,12 @@ class PluginRuntime(
                             captured = incoming.firstOrNull()
                             saw = true
                         }
+                        function("fail") { incoming ->
+                            failure = PluginCallException(
+                                incoming.getOrNull(0) as? String ?: "",
+                                incoming.getOrNull(1) as? String ?: "",
+                            )
+                        }
                         asyncFunction("fetch") { incoming ->
                             val req = incoming.firstOrNull() as? Map<*, *>
                                 ?: throw IllegalArgumentException("fetch")
@@ -131,8 +160,9 @@ class PluginRuntime(
                     }
                     evaluate<Any?>(FETCH_SHIM, filename = "mygramophone-fetch.js")
                     addModule(specifier, source)
-                    evaluate<Any?>(caller(specifier), filename = CALLER, asModule = true)
+                    evaluate<Any?>(script, filename = CALLER, asModule = true)
                 }
+                if (failure != null) throw failure
                 if (!saw) throw IllegalStateException("plugin returned nothing")
                 captured
             }
@@ -240,8 +270,26 @@ class PluginRuntime(
             if (typeof fn !== "function") {
               throw new Error("missing export " + bridge.exportName);
             }
-            const value = bridge.hasArgs ? await fn(bridge.args) : await fn();
-            bridge.result(value);
+            try {
+              const value = bridge.hasArgs ? await fn(bridge.args) : await fn();
+              bridge.result(value);
+            } catch (e) {
+              let code = "";
+              let message = "";
+              if (e != null && typeof e === "object") {
+                if (e.code != null) code = String(e.code);
+                if (e.message != null) message = String(e.message);
+              } else if (e != null) {
+                message = String(e);
+              }
+              bridge.fail(code, message);
+            }
+        """.trimIndent()
+
+        fun exportList(specifier: String): String = """
+            import * as plugin from "$specifier";
+            const names = Object.keys(plugin).filter((key) => typeof plugin[key] === "function");
+            globalThis.__mygramophone.result(names);
         """.trimIndent()
 
         fun hostLanguage(locale: Locale): String {

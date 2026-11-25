@@ -40,6 +40,7 @@ import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import coil3.map.AndroidUriMapper
+import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.NullRequestDataException
 import coil3.util.Logger
 import kotlinx.coroutines.CoroutineScope
@@ -55,6 +56,7 @@ import org.akanework.gramophone.BuildConfig
 import org.akanework.gramophone.R
 import org.akanework.gramophone.logic.ui.BugHandlerActivity
 import org.akanework.gramophone.logic.utils.CoilArtPipeline
+import org.akanework.gramophone.mygomusic.PluginCovers
 import org.akanework.gramophone.ui.LyricWidgetProvider
 import org.lsposed.hiddenapibypass.HiddenApiBypass
 import org.lsposed.hiddenapibypass.LSPass
@@ -335,6 +337,7 @@ class GramophoneApplication : Application(), SingletonImageLoader.Factory,
                 add(CoilArtPipeline.ThumbnailFetcherFactory())
                 add(CoilArtPipeline.AlbumThumbnailFetcherFactory())
                 add(CoilArtPipeline.SongCoverFetcherFactory())
+                add(OkHttpNetworkFetcherFactory(callFactory = { PluginCovers.client }))
             }
             .run {
                 if (!BuildConfig.DEBUG) this else
