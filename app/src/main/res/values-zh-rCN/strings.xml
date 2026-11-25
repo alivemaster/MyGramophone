@@ -106,10 +106,13 @@
     <string name="settings_color_accuracy">颜色准确度</string>
     <string name="settings_color_accuracy_summary">提高颜色生成的准确度</string>
     <string name="settings_experimental_settings_summary">测试功能、其他</string>
-    <string name="mygomusic_plugin_settings">MyGo Music插件设置</string>
+    <string name="mygomusic_plugin_settings">MyGo Music 插件设置</string>
     <string name="mygomusic_plugin_settings_summary">插件支持与已安装的插件</string>
-    <string name="mygomusic_plugins_title">启用 mygo-music 插件支持</string>
-    <string name="mygomusic_plugins_summary">关闭时主界面保持不变，已安装的插件仍会保留</string>
+    <string name="mygomusic_plugin_enabled">启用</string>
+    <string name="mygomusic_plugin_current_value">当前值：%1$s</string>
+    <string name="mygomusic_plugin_link">链接</string>
+    <string name="mygomusic_plugin_setting_failed">这项设置没能保存。</string>
+    <string name="mygomusic_plugin_retry">重试</string>
     <string name="mygomusic_plugin_list_title">已安装的插件</string>
     <string name="mygomusic_plugin_list_empty">还没有安装插件</string>
     <string name="mygomusic_plugin_add">添加插件</string>
@@ -127,6 +130,8 @@
     <string name="mygomusic_plugin_permission_network">网络</string>
     <string name="mygomusic_plugin_permission_network_any">网络：任意主机</string>
     <string name="mygomusic_plugin_permission_network_none">不访问网络</string>
+    <string name="mygomusic_plugin_reach">可访问%1$s</string>
+    <string name="mygomusic_plugin_reach_any">可访问任意主机</string>
     <string name="mygomusic_plugin_permission_process">本应用不会执行这些程序</string>
     <string name="mygomusic_plugin_permission_process_any">本应用不会执行任何程序</string>
     <string name="mygomusic_plugin_delete_title">删除这个插件？</string>
@@ -154,6 +159,7 @@
     <string name="mygomusic_stream_only">本应用只播放 stream 插件。</string>
     <string name="mygomusic_open_settings">插件设置</string>
     <string name="mygomusic_sign_in">登录</string>
+    <string name="mygomusic_sign_out">退出登录</string>
     <string name="mygomusic_needs_sign_in">登录后才能查看。</string>
     <string name="mygomusic_needs_setup">这个插件需要先进行设置。</string>
     <string name="mygomusic_unsave">取消收藏</string>

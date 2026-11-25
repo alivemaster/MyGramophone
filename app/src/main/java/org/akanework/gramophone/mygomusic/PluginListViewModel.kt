@@ -26,7 +26,6 @@ import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
-import androidx.preference.PreferenceManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -196,46 +195,27 @@ class PluginListViewModel(app: Application) : AndroidViewModel(app) {
         update { it.copy(failure = null) }
     }
 
-    /** Runs only after the user opens this row. Cold start does not call it. */
-    fun logPlaylists(id: String) {
-        if (ui.value?.busy == true) return
-        if (!pluginsEnabled()) {
-            Log.i(TAG, "plugin $id skipped, support is off")
-            return
-        }
-        update { it.copy(busy = true) }
+    fun setEnabled(id: String, on: Boolean) {
         viewModelScope.launch {
             try {
-                val text = withContext(Dispatchers.IO) {
-                    val dir = store.packageDir(id)
-                    val manifest = PluginManifest.read(dir)
-                    val value = PluginRuntime(manifest, dir, store.dataDir(id), locale()).call("playlists")
-                    pluginJsonText(value)
+                val plugins = withContext(Dispatchers.IO) {
+                    store.setEnabled(id, on)
+                    store.list(locale())
                 }
-                Log.i(TAG, "plugin $id playlists $text")
+                update { it.copy(plugins = plugins) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.w(TAG, "plugin $id playlists", e)
-            } finally {
-                update { it.copy(busy = false) }
-            }
-        }
-    }
-
-    fun delete(id: String, deleteData: Boolean) {
-        if (ui.value?.busy == true) return
-        viewModelScope.launch {
-            update { it.copy(busy = true) }
-            try {
-                withContext(Dispatchers.IO) { store.delete(id, deleteData) }
-                val plugins = withContext(Dispatchers.IO) { store.list(locale()) }
-                update { it.copy(busy = false, plugins = plugins) }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Log.w(TAG, "delete", e)
-                update { it.copy(busy = false, failure = PluginPackageException(PluginFailureKind.Io, cause = e)) }
+                Log.w(TAG, "enabled", e)
+                val plugins = withContext(Dispatchers.IO) {
+                    runCatching { store.list(locale()) }.getOrNull()
+                }
+                update {
+                    it.copy(
+                        plugins = plugins ?: it.plugins,
+                        failure = PluginPackageException(PluginFailureKind.Io, cause = e),
+                    )
+                }
             }
         }
     }
@@ -268,11 +248,6 @@ class PluginListViewModel(app: Application) : AndroidViewModel(app) {
             withContext(Dispatchers.IO) { previous.discard() }
         }
         update { it.copy(busy = false, confirm = staged.manifest, confirmRepo = staged.repo) }
-    }
-
-    private fun pluginsEnabled(): Boolean {
-        return PreferenceManager.getDefaultSharedPreferences(getApplication())
-            .getBoolean(MygomusicPrefs.ENABLED, false)
     }
 
     private fun locale(): Locale {

@@ -201,7 +201,7 @@ class PluginPlaylistFragment : BaseFragment(null) {
                             putInt(ARG_TOKEN, token)
                         }
                     }
-                    is PluginPage.Account -> if (view != null) showPluginAccountDialog(requireActivity(), result)
+                    is PluginPage.Account -> if (view != null) showPluginAccountDialog(requireActivity(), pluginId(), result)
                     is PluginPage.Message -> toast(result.text)
                 }
             } catch (e: CancellationException) {
@@ -248,7 +248,7 @@ class PluginPlaylistFragment : BaseFragment(null) {
                         page.title.ifEmpty { title },
                         cache.putTracks(page.tracks),
                     )
-                    is PluginPage.Account -> if (view != null) showPluginAccountDialog(requireActivity(), page)
+                    is PluginPage.Account -> if (view != null) showPluginAccountDialog(requireActivity(), pluginId(), page)
                     is PluginPage.Message -> toast(page.text)
                     else -> toast(null)
                 }
@@ -279,7 +279,7 @@ class PluginPlaylistFragment : BaseFragment(null) {
             try {
                 when (val page = library.stationTracks(pluginId(), id)) {
                     is PluginPage.Tracks -> PluginPlayback.play(mainActivity, pluginId(), page.tracks, 0, title)
-                    is PluginPage.Account -> if (view != null) showPluginAccountDialog(requireActivity(), page)
+                    is PluginPage.Account -> if (view != null) showPluginAccountDialog(requireActivity(), pluginId(), page)
                     is PluginPage.Message -> toast(page.text)
                     else -> Unit
                 }
@@ -299,7 +299,7 @@ class PluginPlaylistFragment : BaseFragment(null) {
             try {
                 when (val page = library.songs(pluginId(), row.open, row.title)) {
                     is PluginPage.Tracks -> block(page.tracks, page.title.ifEmpty { row.title })
-                    is PluginPage.Account -> if (view != null) showPluginAccountDialog(requireActivity(), page)
+                    is PluginPage.Account -> if (view != null) showPluginAccountDialog(requireActivity(), pluginId(), page)
                     is PluginPage.Message -> toast(page.text)
                     else -> Unit
                 }
@@ -388,14 +388,14 @@ class PluginPlaylistFragment : BaseFragment(null) {
                 scaffold.status.visibility = View.GONE
                 rows.submitGroups(page.groups)
                 if (!page.title.isNullOrEmpty()) scaffold.collapsing?.title = page.title
-                page.account?.let { showPluginAccountDialog(requireActivity(), it) }
+                page.account?.let { showPluginAccountDialog(requireActivity(), pluginId(), it) }
             }
             is PluginPage.Tracks -> {
                 scaffold.status.visibility = View.GONE
                 if (page.title.isNotEmpty()) scaffold.collapsing?.title = page.title
                 rows.submitTracks(page.tracks)
             }
-            is PluginPage.Account -> showPluginAccountDialog(requireActivity(), page)
+            is PluginPage.Account -> showPluginAccountDialog(requireActivity(), pluginId(), page)
             is PluginPage.Message -> showMessage(page.text)
         }
     }
@@ -411,7 +411,7 @@ class PluginPlaylistFragment : BaseFragment(null) {
         val call = error as? PluginCallException
         if (call != null && (call.code == "signIn" || call.code == "setup")) {
             if (view != null) {
-                showPluginAccountDialog(requireActivity(), PluginPage.Account(call.code, call.message?.trim().orEmpty()))
+                showPluginAccountDialog(requireActivity(), pluginId(), PluginPage.Account(call.code, call.message?.trim().orEmpty()))
             }
             return
         }

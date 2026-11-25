@@ -134,7 +134,7 @@ class PluginPlaylistDetailFragment : BaseFragment(true) {
                     showTracks(page.tracks)
                 }
                 is PluginPage.Account -> {
-                    showPluginAccountDialog(requireActivity(), page)
+                    showPluginAccountDialog(requireActivity(), pluginId(), page)
                     if (tracks == null) parentFragmentManager.popBackStack()
                 }
                 is PluginPage.Message -> showMessage(page.text)

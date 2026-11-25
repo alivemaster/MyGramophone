@@ -24,6 +24,7 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
+import androidx.core.os.ConfigurationCompat
 import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.DefaultLifecycleObserver
@@ -36,7 +37,9 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import org.akanework.gramophone.R
+import org.akanework.gramophone.logic.allowDiskAccessInStrictMode
 import org.akanework.gramophone.logic.ui.MyRecyclerView
+import java.util.Locale
 
 internal class PluginScaffold(
     val root: View,
@@ -124,7 +127,11 @@ private fun tint(refresh: SwipeRefreshLayout) {
 private var accountDialog: AlertDialog? = null
 
 /** Sign-in and setup stay in a dialog so the list underneath is left as it is. */
-internal fun showPluginAccountDialog(activity: FragmentActivity, account: PluginPage.Account) {
+internal fun showPluginAccountDialog(
+    activity: FragmentActivity,
+    pluginId: String,
+    account: PluginPage.Account,
+) {
     if (activity.isFinishing || accountDialog?.isShowing == true) return
     val message = account.message.trim().ifEmpty {
         activity.getString(
@@ -135,7 +142,11 @@ internal fun showPluginAccountDialog(activity: FragmentActivity, account: Plugin
     val dialog = MaterialAlertDialogBuilder(activity)
         .setMessage(message)
         .setPositiveButton(action) { _, _ ->
-            activity.startActivity(Intent(activity, PluginListActivity::class.java))
+            if (!isPluginId(pluginId)) return@setPositiveButton
+            activity.startActivity(Intent(activity, PluginSettingsActivity::class.java).apply {
+                putExtra(PluginSettingsActivity.EXTRA_ID, pluginId)
+                putExtra(PluginSettingsActivity.EXTRA_TITLE, pluginTitle(activity, pluginId))
+            })
         }
         .setNegativeButton(android.R.string.cancel) { _, _ -> }
         .setCancelable(true)
@@ -156,4 +167,14 @@ internal fun showPluginAccountDialog(activity: FragmentActivity, account: Plugin
     }
     accountDialog = dialog
     dialog.show()
+}
+
+private fun pluginTitle(activity: FragmentActivity, pluginId: String): String {
+    return allowDiskAccessInStrictMode {
+        runCatching {
+            val locale = ConfigurationCompat.getLocales(activity.resources.configuration)[0]
+                ?: Locale.getDefault()
+            PluginStore(activity).list(locale).firstOrNull { it.directoryName == pluginId }?.title
+        }.getOrNull()
+    }.orEmpty().ifEmpty { pluginId }
 }

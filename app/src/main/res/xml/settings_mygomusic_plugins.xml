@@ -18,21 +18,12 @@
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
-    <SwitchPreferenceCompat
-        android:defaultValue="false"
-        android:key="mygomusic_plugins"
-        android:layout="@layout/preference_switch"
-        android:summary="@string/mygomusic_plugins_summary"
-        android:title="@string/mygomusic_plugins_title"
-        android:widgetLayout="@layout/preference_switch_widget"
-        app:iconSpaceReserved="false" />
-
-    <ListPreference
+    <DropDownPreference
         android:defaultValue="high"
         android:entries="@array/mygomusic_quality"
         android:entryValues="@array/mygomusic_quality_val"
         android:key="mygomusic_quality"
-        android:layout="@layout/preference_basic"
+        android:layout="@layout/preference_dropdown_md"
         android:title="@string/mygomusic_quality"
         app:iconSpaceReserved="false"
         app:useSimpleSummaryProvider="true" />

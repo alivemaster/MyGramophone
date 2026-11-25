@@ -17,17 +17,15 @@
 
 package org.akanework.gramophone.mygomusic
 
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
-import android.widget.CheckBox
-import android.widget.TextView
+import android.widget.CompoundButton
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.widget.PopupMenu
 import androidx.core.os.ConfigurationCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -37,7 +35,6 @@ import androidx.fragment.app.viewModels
 import androidx.preference.Preference
 import androidx.preference.PreferenceCategory
 import androidx.preference.PreferenceViewHolder
-import androidx.preference.SwitchPreferenceCompat
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.textfield.TextInputEditText
@@ -48,11 +45,6 @@ import org.akanework.gramophone.logic.dpToPx
 import org.akanework.gramophone.ui.fragments.BasePreferenceFragment
 import org.akanework.gramophone.ui.fragments.BaseSettingsActivity
 import java.util.Locale
-
-/** Absent means off. Callers must pass false as the default. */
-object MygomusicPrefs {
-    const val ENABLED = "mygomusic_plugins"
-}
 
 class PluginListActivity : BaseSettingsActivity(
     R.string.mygomusic_plugin_settings,
@@ -66,6 +58,7 @@ class PluginListFragment : BasePreferenceFragment() {
     private var failureDialog: AlertDialog? = null
     private var githubDialog: AlertDialog? = null
     private var rendered: List<InstalledPlugin>? = null
+    private var sawFailure: PluginPackageException? = null
 
     private val openZip = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) model.stageZip(uri)
@@ -76,7 +69,6 @@ class PluginListFragment : BasePreferenceFragment() {
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         setPreferencesFromResource(R.xml.settings_mygomusic_plugins, rootKey)
-        check(findPreference<SwitchPreferenceCompat>(MygomusicPrefs.ENABLED) != null)
         requireNotNull(findPreference<Preference>("mygomusic_plugin_list_empty")).apply {
             isSelectable = false
             isPersistent = false
@@ -111,6 +103,11 @@ class PluginListFragment : BasePreferenceFragment() {
         model.ui.observe(viewLifecycleOwner) { render(it) }
     }
 
+    override fun onResume() {
+        super.onResume()
+        model.refresh()
+    }
+
     override fun onDestroyView() {
         progressDialog?.dismiss()
         progressDialog = null
@@ -133,6 +130,8 @@ class PluginListFragment : BasePreferenceFragment() {
     }
 
     private fun render(ui: PluginListUi) {
+        if (ui.failure != null && ui.failure !== sawFailure) rendered = null
+        sawFailure = ui.failure
         renderList(ui.plugins)
         if (ui.busy) {
             if (progressDialog?.isShowing != true) {
@@ -198,28 +197,17 @@ class PluginListFragment : BasePreferenceFragment() {
                 }
                 isPersistent = false
                 isIconSpaceReserved = false
+                enabledPlugin = plugin.enabled
+                onToggle = { on -> model.setEnabled(plugin.directoryName, on) }
                 onPreferenceClickListener = Preference.OnPreferenceClickListener {
-                    if (!plugin.broken) model.logPlaylists(plugin.directoryName)
+                    startActivity(Intent(requireContext(), PluginSettingsActivity::class.java).apply {
+                        putExtra(PluginSettingsActivity.EXTRA_ID, plugin.directoryName)
+                        putExtra(PluginSettingsActivity.EXTRA_TITLE, plugin.title)
+                    })
                     true
                 }
-                onMenu = { confirmDelete(plugin) }
             })
         }
-    }
-
-    private fun confirmDelete(plugin: InstalledPlugin) {
-        val form = layoutInflater.inflate(R.layout.mygomusic_plugin_delete_data, null)
-        form.findViewById<TextView>(R.id.mygomusic_plugin_delete_message).text =
-            getString(R.string.mygomusic_plugin_delete_message, plugin.title)
-        val check = form.findViewById<CheckBox>(R.id.mygomusic_plugin_delete_data)
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle(R.string.mygomusic_plugin_delete_title)
-            .setView(form)
-            .setPositiveButton(R.string.delete) { _, _ ->
-                model.delete(plugin.directoryName, check.isChecked)
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
     }
 
     private fun confirmText(manifest: PluginManifest, repo: String): String = buildString {
@@ -349,26 +337,25 @@ class PluginListFragment : BasePreferenceFragment() {
 }
 
 private class InstalledPluginPreference(context: android.content.Context) : Preference(context) {
-    var onMenu: (() -> Unit)? = null
+    var enabledPlugin: Boolean = true
+    var onToggle: ((Boolean) -> Unit)? = null
 
     init {
         layoutResource = R.layout.preference_switch
-        widgetLayoutResource = R.layout.mygomusic_plugin_menu
+        widgetLayoutResource = R.layout.preference_switch_widget
     }
 
     override fun onBindViewHolder(holder: PreferenceViewHolder) {
         super.onBindViewHolder(holder)
-        holder.findViewById(R.id.mygomusic_plugin_menu)?.setOnClickListener { anchor ->
-            PopupMenu(anchor.context, anchor, Gravity.END).apply {
-                menuInflater.inflate(R.menu.mygomusic_plugin_item, menu)
-                setOnMenuItemClickListener { item ->
-                    if (item.itemId == R.id.mygomusic_plugin_delete) {
-                        onMenu?.invoke()
-                    }
-                    true
-                }
-                show()
-            }
+        val sw = holder.findViewById(androidx.preference.R.id.switchWidget) as? CompoundButton ?: return
+        // The row opens this plugin. The switch is its own control, so it takes the click.
+        sw.setOnCheckedChangeListener(null)
+        sw.isChecked = enabledPlugin
+        sw.isClickable = true
+        sw.isFocusable = true
+        sw.contentDescription = sw.context.getString(R.string.mygomusic_plugin_enabled)
+        sw.setOnCheckedChangeListener { _, checked ->
+            if (checked != enabledPlugin) onToggle?.invoke(checked)
         }
     }
 }

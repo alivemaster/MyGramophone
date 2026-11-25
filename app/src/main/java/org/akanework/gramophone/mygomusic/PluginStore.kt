@@ -29,6 +29,7 @@ data class InstalledPlugin(
     val title: String,
     val version: String,
     val broken: Boolean,
+    val enabled: Boolean,
 )
 
 data class PluginOrigin(
@@ -63,15 +64,33 @@ class PluginStore(private val root: File) {
         val ordered = order.mapNotNull { byName[it] }
         val rest = dirs.filter { it.name !in order }.sortedBy { it.name }
         return (ordered + rest).map { dir ->
+            val enabled = isEnabled(dir.name)
             try {
                 val manifest = PluginManifest.read(dir)
-                InstalledPlugin(dir.name, manifest.title(locale), manifest.version, false)
+                InstalledPlugin(dir.name, manifest.title(locale), manifest.version, false, enabled)
             } catch (e: Exception) {
                 // Kept visible so a package that no longer parses can still be deleted.
                 Log.w(TAG, "plugin ${dir.name}", e)
-                InstalledPlugin(dir.name, dir.name, "", true)
+                InstalledPlugin(dir.name, dir.name, "", true, enabled)
             }
         }
+    }
+
+    /** Missing file means on. The flag lives in the data directory, so reinstalling keeps it. */
+    fun isEnabled(id: String): Boolean {
+        val file = File(dataDir(id), ENABLED_FILE)
+        if (!file.isFile) return true
+        return !file.readText(Charsets.UTF_8).trim().equals("false", ignoreCase = true)
+    }
+
+    fun setEnabled(id: String, on: Boolean) {
+        val dir = dataDir(id)
+        if (!dir.isDirectory && !dir.mkdirs()) throw PluginPackageException(PluginFailureKind.Io)
+        val tmp = File(dir, "$ENABLED_FILE.tmp")
+        tmp.writeText(if (on) "true" else "false", Charsets.UTF_8)
+        val dest = File(dir, ENABLED_FILE)
+        if (dest.exists() && !dest.delete()) throw PluginPackageException(PluginFailureKind.Io)
+        if (!tmp.renameTo(dest)) throw PluginPackageException(PluginFailureKind.Io)
     }
 
     /** [repo] empty means a folder or zip from this device. */
@@ -200,5 +219,6 @@ class PluginStore(private val root: File) {
         const val TAG = "Mygomusic"
         const val ORIGIN_FILE = ".origin.json"
         const val ORDER_FILE = ".order.json"
+        const val ENABLED_FILE = "enabled"
     }
 }

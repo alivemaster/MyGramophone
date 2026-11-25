@@ -71,9 +71,8 @@ class ViewPager2Adapter(
 
     @SuppressLint("NotifyDataSetChanged")
     override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
-        when (key) {
-            "tabs" -> apply(mapSettingToTabList(prefs.getStringStrict("tabs", "")!!), readPluginTabs())
-            "mygomusic_plugins" -> refreshPlugins()
+        if (key == "tabs") {
+            apply(mapSettingToTabList(prefs.getStringStrict("tabs", "")!!), readPluginTabs())
         }
     }
 
@@ -155,11 +154,10 @@ class ViewPager2Adapter(
     }
 
     private fun readPluginTabs(): List<PluginTab> {
-        if (!prefs.getBoolean("mygomusic_plugins", false)) return emptyList()
         // Listing the plugin directory is a disk read. The pager has to update on the main thread.
         return allowDiskAccessInStrictMode {
             try {
-                PluginStore(context).list(uiLocale()).filter { !it.broken }
+                PluginStore(context).list(uiLocale()).filter { !it.broken && it.enabled }
                     .map { PluginTab(it.directoryName, it.title) }
             } catch (e: Exception) {
                 Log.w("ViewPager2Adapter", "plugins", e)

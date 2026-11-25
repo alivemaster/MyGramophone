@@ -113,6 +113,7 @@ data class PluginManifest(
     val navigation: List<PluginNav>,
     val headerRules: List<PluginHeaderRule>,
     val locales: Map<String, Map<String, String>>,
+    val settings: List<PluginSetting> = emptyList(),
 ) {
     fun text(locale: Locale, source: String): String {
         if (source.isEmpty()) return source
@@ -192,6 +193,7 @@ data class PluginManifest(
                 navigation = navigation(obj.optJSONArray("navigation")),
                 headerRules = headerRules(network, obj.optJSONArray("requestHeaders")),
                 locales = locales(root),
+                settings = parsePluginSettings(obj),
             )
         }
 
