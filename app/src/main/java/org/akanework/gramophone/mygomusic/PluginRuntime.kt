@@ -28,7 +28,10 @@ import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.security.MessageDigest
 import java.util.Locale
+import javax.crypto.Cipher
+import javax.crypto.spec.SecretKeySpec
 
 /**
  * One QuickJS runtime for a single export call, then closed.
@@ -51,6 +54,7 @@ class PluginRuntime(
         val source = readModule(specifier)
         val dirPath = pluginDir.canonicalFile.path
         val dataPath = dataDir.canonicalFile.apply { mkdirs() }.path
+        val records = PluginRecords(File(dataPath))
         val language = hostLanguage(locale)
         val arch = hostArch()
         return withContext(Dispatchers.IO) {
@@ -75,11 +79,30 @@ class PluginRuntime(
                             val text = incoming.firstOrNull() as? String ?: return@function ""
                             translate(text)
                         }
-                        function("setting") { _ -> "" }
+                        function("setting") { incoming ->
+                            records.setting(argString(incoming, 0))
+                        }
                         define("storage") {
-                            function("get") { _ -> null }
-                            function("set") { _ -> }
-                            function("remove") { _ -> }
+                            function("get") { incoming ->
+                                when (val hit = records.storageGet(argString(incoming, 0))) {
+                                    Stored.Missing -> Unit
+                                    is Stored.Present -> hit.value
+                                }
+                            }
+                            function("set") { incoming ->
+                                val key = argString(incoming, 0)
+                                val value = if (incoming.size < 2) null else incoming[1]
+                                records.storageSet(key, value)
+                            }
+                            function("remove") { incoming ->
+                                records.storageRemove(argString(incoming, 0))
+                            }
+                        }
+                        define("crypto") {
+                            function("md5") { incoming -> md5Hex(argString(incoming, 0)) }
+                            function("aesEcbEncrypt") { incoming ->
+                                aesEcbEncrypt(argString(incoming, 0), argString(incoming, 1))
+                            }
                         }
                         function("spawn") { _ ->
                             throw IllegalStateException("This app does not run external programs.")
@@ -93,7 +116,20 @@ class PluginRuntime(
                             captured = incoming.firstOrNull()
                             saw = true
                         }
+                        asyncFunction("fetch") { incoming ->
+                            val req = incoming.firstOrNull() as? Map<*, *>
+                                ?: throw IllegalArgumentException("fetch")
+                            PluginFetch.request(
+                                network = manifest.network,
+                                url = req["url"] as? String ?: throw IllegalArgumentException("fetch"),
+                                method = req["method"] as? String ?: "GET",
+                                headers = stringMap(req["headers"]),
+                                body = req["body"] as? String,
+                                redirect = req["redirect"] as? String ?: "follow",
+                            )
+                        }
                     }
+                    evaluate<Any?>(FETCH_SHIM, filename = "mygramophone-fetch.js")
                     addModule(specifier, source)
                     evaluate<Any?>(caller(specifier), filename = CALLER, asModule = true)
                 }
@@ -135,6 +171,57 @@ class PluginRuntime(
     private companion object {
         const val TAG = "Mygomusic"
         const val CALLER = "mygramophone-call.js"
+        val FETCH_SHIM = """
+            globalThis.fetch = async function (input, init) {
+              let url = input;
+              let method = "GET";
+              let headers = {};
+              let body = null;
+              let redirect = "follow";
+              if (input !== null && typeof input === "object") {
+                url = input.url;
+                if (input.method) method = input.method;
+                if (input.headers) headers = input.headers;
+                if (input.body != null) body = input.body;
+                if (input.redirect) redirect = input.redirect;
+              }
+              if (init != null) {
+                if (init.method) method = init.method;
+                if (init.headers) headers = init.headers;
+                if (init.body != null) body = init.body;
+                if (init.redirect) redirect = init.redirect;
+              }
+              if (body != null && typeof body !== "string") body = String(body);
+              const raw = await globalThis.__mygramophone.fetch({
+                url: String(url),
+                method: String(method),
+                headers: headers,
+                body: body,
+                redirect: String(redirect),
+              });
+              const headersOut = {
+                get(name) {
+                  const value = raw.headers[String(name).toLowerCase()];
+                  return value == null ? null : String(value);
+                },
+                getSetCookie() {
+                  return raw.setCookie ? raw.setCookie.slice() : [];
+                },
+                has(name) {
+                  return this.get(name) != null;
+                },
+              };
+              return {
+                ok: raw.ok,
+                status: raw.status,
+                statusText: raw.statusText,
+                url: raw.url,
+                headers: headersOut,
+                async text() { return raw.body; },
+                async json() { return JSON.parse(raw.body); },
+              };
+            };
+        """.trimIndent()
         const val MEMORY_LIMIT_BYTES = 256L * 1024 * 1024
         const val CALL_TIMEOUT_MILLIS = 30_000L
         val EXPORT_NAME = Regex("^[A-Za-z_$][A-Za-z0-9_$]*$")
@@ -181,7 +268,44 @@ internal fun pluginJsonText(value: Any?): String = when (val wrapped = pluginJso
     else -> wrapped.toString()
 }
 
-private fun pluginJson(value: Any?): Any = when (value) {
+private fun stringMap(value: Any?): Map<String, String> {
+    val map = value as? Map<*, *> ?: return emptyMap()
+    val out = LinkedHashMap<String, String>()
+    for ((key, item) in map) {
+        if (key is String && item != null) out[key] = item as? String ?: item.toString()
+    }
+    return out
+}
+
+private fun argString(args: Array<Any?>, index: Int): String {
+    val value = args.getOrNull(index)
+    if (value !is String) throw IllegalArgumentException("expected a string")
+    return value
+}
+
+private fun md5Hex(text: String): String {
+    val digest = MessageDigest.getInstance("MD5").digest(text.toByteArray(Charsets.UTF_8))
+    return hex(digest)
+}
+
+private fun aesEcbEncrypt(key: String, text: String): String {
+    val cipher = Cipher.getInstance("AES/ECB/PKCS5Padding")
+    cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(key.toByteArray(Charsets.UTF_8), "AES"))
+    return hex(cipher.doFinal(text.toByteArray(Charsets.UTF_8)))
+}
+
+private fun hex(bytes: ByteArray): String {
+    val out = CharArray(bytes.size * 2)
+    val digits = "0123456789abcdef"
+    for (i in bytes.indices) {
+        val v = bytes[i].toInt() and 0xff
+        out[i * 2] = digits[v ushr 4]
+        out[i * 2 + 1] = digits[v and 0x0f]
+    }
+    return String(out)
+}
+
+internal fun pluginJson(value: Any?): Any = when (value) {
     null -> JSONObject.NULL
     is Map<*, *> -> JSONObject().apply {
         for ((key, item) in value) {

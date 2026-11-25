@@ -1,0 +1,17 @@
+{
+  "id": "host-probe",
+  "name": "Host probe",
+  "version": "1",
+  "main": "index.js",
+  "playback": "stream",
+  "permissions": {
+    "network": ["example.com"]
+  },
+  "settings": [
+    {
+      "key": "probe",
+      "label": "Probe",
+      "help": "Read by host.setting. Empty until a settings page writes it."
+    }
+  ]
+}
