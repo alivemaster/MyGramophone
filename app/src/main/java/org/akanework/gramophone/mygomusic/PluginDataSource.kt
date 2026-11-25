@@ -56,17 +56,24 @@ internal object PluginDataSource {
     const val QUALITY_KEY = "mygomusic_quality"
 
     private const val TAG = "Mygomusic"
-    private const val STAY = "X-MyGramophone-Stay"
+    internal const val STAY = "X-MyGramophone-Stay"
 
-    private val httpClient: OkHttpClient = OkHttpClient.Builder()
-        .followRedirects(false)
-        .followSslRedirects(false)
-        .connectTimeout(8, TimeUnit.SECONDS)
-        .readTimeout(8, TimeUnit.SECONDS)
-        .addInterceptor(HeadersStay())
-        .build()
+    private val calls: Call.Factory = newStayingClient {
+        connectTimeout(8, TimeUnit.SECONDS)
+        readTimeout(8, TimeUnit.SECONDS)
+    }
 
-    private val calls: Call.Factory = StayFactory(httpClient)
+    /** Pictures and audio share this redirect rule. [block] sets timeouts. */
+    internal fun newStayingClient(block: OkHttpClient.Builder.() -> Unit): Call.Factory {
+        val http = OkHttpClient.Builder()
+            .followRedirects(false)
+            .followSslRedirects(false)
+            .apply(block)
+            .addInterceptor(UserAgent())
+            .addInterceptor(HeadersStay())
+            .build()
+        return StayFactory(http)
+    }
 
     class Factory(context: Context) : DataSource.Factory {
         private val app = context.applicationContext
@@ -276,6 +283,24 @@ internal object PluginDataSource {
         }
     }
 
+    /**
+     * Puts [USER_AGENT] on the request unless the plugin already named User-Agent.
+     * A plugin value is in the stay set and is removed, with the other plugin
+     * headers, when a redirect leaves the original host.
+     */
+    private class UserAgent : Interceptor {
+        override fun intercept(chain: Interceptor.Chain): Response {
+            val request = chain.request()
+            val names = request.tag(StayNames::class.java)?.names.orEmpty()
+            if (names.any { it.equals("User-Agent", true) } || request.header("User-Agent") != null) {
+                return chain.proceed(request)
+            }
+            return chain.proceed(
+                request.newBuilder().header("User-Agent", USER_AGENT).build(),
+            )
+        }
+    }
+
     private class StayFactory(private val client: OkHttpClient) : Call.Factory {
         override fun newCall(request: Request): Call {
             val names = request.header(STAY)
@@ -350,7 +375,7 @@ private fun streamMime(type: String): String? = when (type.trim().lowercase()) {
     else -> null
 }
 
-private fun missingExport(error: Throwable): Boolean {
+internal fun missingExport(error: Throwable): Boolean {
     var current: Throwable? = error
     while (current != null) {
         if (current.message?.contains("missing export") == true) return true

@@ -115,6 +115,7 @@ import kotlinx.coroutines.guava.future
 import kotlinx.coroutines.guava.await
 import org.akanework.gramophone.R
 import org.akanework.gramophone.mygomusic.PluginDataSource
+import org.akanework.gramophone.mygomusic.PluginLyrics
 import org.akanework.gramophone.logic.ui.MeiZuLyricsMediaNotificationProvider
 import org.akanework.gramophone.logic.ui.isManualNotificationUpdate
 import org.akanework.gramophone.logic.utils.AfFormatInfo
@@ -1430,8 +1431,14 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
             )
             // TODO: allow multiple lyric files/tags combining them for translations...maybe?
             val format = tracks.getFirstSelectedTrackFormatByType(C.TRACK_TYPE_AUDIO)
+            val item = mediaItem
             var lrc: SemanticLyrics? = null
-            if (format != null) {
+            if (item != null && item.mediaId.startsWith("plugin:")) {
+                // The plugin names the words. There is no lyric file beside this item.
+                if (format != null) {
+                    lrc = PluginLyrics.load(applicationContext, item, trim)
+                }
+            } else if (format != null) {
                 lrc = loadAndParseLyricsFile(
                     applicationContext,
                     mediaItem?.getFile(),

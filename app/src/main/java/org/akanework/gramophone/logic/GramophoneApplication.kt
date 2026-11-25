@@ -56,6 +56,7 @@ import org.akanework.gramophone.BuildConfig
 import org.akanework.gramophone.R
 import org.akanework.gramophone.logic.ui.BugHandlerActivity
 import org.akanework.gramophone.logic.utils.CoilArtPipeline
+import org.akanework.gramophone.mygomusic.PluginCoverInterceptor
 import org.akanework.gramophone.mygomusic.PluginCovers
 import org.akanework.gramophone.ui.LyricWidgetProvider
 import org.lsposed.hiddenapibypass.HiddenApiBypass
@@ -337,6 +338,7 @@ class GramophoneApplication : Application(), SingletonImageLoader.Factory,
                 add(CoilArtPipeline.ThumbnailFetcherFactory())
                 add(CoilArtPipeline.AlbumThumbnailFetcherFactory())
                 add(CoilArtPipeline.SongCoverFetcherFactory())
+                add(PluginCoverInterceptor(this@GramophoneApplication))
                 add(OkHttpNetworkFetcherFactory(callFactory = { PluginCovers.client }))
             }
             .run {

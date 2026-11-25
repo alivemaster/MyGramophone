@@ -29,11 +29,9 @@ import androidx.media3.common.Player
 import androidx.recyclerview.widget.RecyclerView
 import coil3.dispose
 import coil3.load
-import coil3.network.httpHeaders
 import coil3.request.error
 import com.google.android.material.button.MaterialButton
 import org.akanework.gramophone.R
-import org.akanework.gramophone.logic.allowDiskAccessInStrictMode
 import org.akanework.gramophone.logic.ui.placeholderScaleToFit
 import org.akanework.gramophone.ui.MediaControllerViewModel
 import org.akanework.gramophone.ui.components.CustomGridLayoutManager
@@ -53,9 +51,6 @@ internal class PluginRowsAdapter(
     private val onPlayAll: (List<PluginTrack>, Boolean) -> Unit,
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
     private val context = fragment.requireContext()
-    private val store by lazy { PluginStore(context) }
-    private var rules: List<PluginHeaderRule> = emptyList()
-    private var network: List<String> = emptyList()
     private var entries: List<Entry> = emptyList()
     private var tracks: List<PluginTrack> = emptyList()
     private var currentMediaItem: String? = null
@@ -97,7 +92,6 @@ internal class PluginRowsAdapter(
     }
 
     fun submitGroups(groups: List<PluginGroup>) {
-        loadHeaders()
         tracks = emptyList()
         val rows = groups.sumOf { it.rows.size }
         entries = buildList {
@@ -115,7 +109,6 @@ internal class PluginRowsAdapter(
     }
 
     fun submitTracks(list: List<PluginTrack>) {
-        loadHeaders()
         tracks = list
         entries = buildList {
             if (list.isNotEmpty()) add(Entry.Decor(list.size, true))
@@ -252,29 +245,11 @@ internal class PluginRowsAdapter(
     }
 
     private fun loadCover(view: ImageView, url: String?, placeholder: Int) {
-        val sized = PluginCovers.sized(url, PluginCovers.LIST_PIXELS)
-        view.load(sized) {
+        // About 40 pixels. The image loader adds this plugin's request headers.
+        view.load(PluginCovers.sized(url, PluginCovers.LIST_PIXELS)) {
             placeholderScaleToFit(placeholder)
             error(placeholder)
-            if (sized != null && rules.isNotEmpty()) {
-                httpHeaders(allowDiskAccessInStrictMode {
-                    PluginCovers.headers(rules, PluginRecords(store.dataDir(pluginId)), sized, network)
-                })
-            }
         }
-    }
-
-    private fun loadHeaders() {
-        val loaded = allowDiskAccessInStrictMode {
-            try {
-                val manifest = PluginManifest.read(store.packageDir(pluginId))
-                manifest.headerRules to manifest.network
-            } catch (_: Exception) {
-                emptyList<PluginHeaderRule>() to emptyList()
-            }
-        }
-        rules = loaded.first
-        network = loaded.second
     }
 
     private fun notifyPlaying() {

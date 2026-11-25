@@ -1,0 +1,16 @@
+index.js
+  Modified from mygo-music examples/demo-plugin/index.js.
+  mygo-music is licensed under the GNU Affero General Public License,
+  version 3. This script is not relicensed. The added track is t4
+  ("The Photo"), with cover.jpg and its own lyrics.
+
+tone.mp3
+  Unchanged audio from mygo-music examples/demo-plugin.
+  Same license. The text is LICENSE-AGPL.
+
+cover.jpg
+  Photograph taken by the MyGramophone developer for this test plugin.
+
+locales/zh-CN.json
+  The shared phrases come from the demo plugin's locale file, plus
+  "Demo extended" and "The Photo".

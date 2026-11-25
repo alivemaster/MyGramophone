@@ -17,37 +17,39 @@
 
 package org.akanework.gramophone.mygomusic
 
+import android.content.Context
 import android.net.Uri
-import coil3.network.NetworkHeaders
-import okhttp3.Interceptor
-import okhttp3.OkHttpClient
-import okhttp3.Response
+import coil3.intercept.Interceptor
+import coil3.network.httpHeaders
+import coil3.request.ImageResult
+import coil3.size.Dimension
+import coil3.size.Size
+import okhttp3.Call
+import java.util.Locale
+import java.util.concurrent.TimeUnit
 
 internal object PluginCovers {
     /** List rows ask the image server for about this many pixels. */
     const val LIST_PIXELS = 40
 
-    val client: OkHttpClient = OkHttpClient.Builder()
-        .addNetworkInterceptor(CrossHostStripper())
-        .build()
+    /** A cover whose URL does not say how big to draw it. */
+    const val UNSPECIFIED_PIXELS = 600
+
+    /**
+     * Picture fetches. The user agent is [PluginDataSource.USER_AGENT]. Plugin
+     * headers are removed when a redirect leaves the original host; a child of
+     * that host keeps them.
+     */
+    val client: Call.Factory = PluginDataSource.newStayingClient {
+        connectTimeout(30, TimeUnit.SECONDS)
+        readTimeout(30, TimeUnit.SECONDS)
+        callTimeout(30, TimeUnit.SECONDS)
+    }
 
     fun sized(url: String?, pixels: Int): String? {
         if (url.isNullOrBlank()) return null
         return url.replace("{size}", pixels.toString())
             .replace("%7Bsize%7D", pixels.toString(), ignoreCase = true)
-    }
-
-    fun headers(
-        rules: List<PluginHeaderRule>,
-        records: PluginRecords,
-        url: String,
-        network: List<String>,
-    ): NetworkHeaders {
-        val builder = NetworkHeaders.Builder()
-        for ((name, value) in headerMap(rules, records, url, "image", network)) {
-            builder.set(name, value)
-        }
-        return builder.build()
     }
 
     /** First rule to set a name wins. An empty placeholder or a line break drops that header. */
@@ -75,6 +77,73 @@ internal object PluginCovers {
             }
         }
         return out
+    }
+
+    /**
+     * Headers for this picture, from the first installed plugin whose rule
+     * matches the host. An empty result means no plugin claims it.
+     */
+    fun pluginImageHeaders(context: Context, url: String): Map<String, String> {
+        val store = PluginStore(context)
+        for (plugin in store.list(Locale.ROOT)) {
+            if (plugin.broken) continue
+            val manifest = try {
+                PluginManifest.read(store.packageDir(plugin.directoryName))
+            } catch (_: Exception) {
+                continue
+            }
+            if (manifest.headerRules.isEmpty()) continue
+            val headers = headerMap(
+                manifest.headerRules,
+                PluginRecords(store.dataDir(plugin.directoryName)),
+                url,
+                "image",
+                manifest.network,
+            )
+            if (headers.isNotEmpty()) return headers
+        }
+        return emptyMap()
+    }
+}
+
+/** List rows pass [PluginCovers.LIST_PIXELS]. Anything Coil did not size uses 600. */
+internal fun coverPixels(size: Size): Int {
+    val width = (size.width as? Dimension.Pixels)?.px ?: 0
+    val height = (size.height as? Dimension.Pixels)?.px ?: 0
+    val px = maxOf(width, height)
+    return if (px > 0) px else PluginCovers.UNSPECIFIED_PIXELS
+}
+
+/**
+ * Replaces `{size}` in cover URLs and attaches the plugin's image headers.
+ * The queue keeps the original URL. List rows already ask for about 40 pixels.
+ */
+internal class PluginCoverInterceptor(private val context: Context) : Interceptor {
+    override suspend fun intercept(chain: Interceptor.Chain): ImageResult {
+        val raw = when (val data = chain.request.data) {
+            is String -> data
+            is Uri -> data.toString()
+            else -> return chain.proceed()
+        }
+        val placeholder = raw.contains("{size}") || raw.contains("%7Bsize%7D", ignoreCase = true)
+        val http = raw.startsWith("http://", ignoreCase = true) ||
+            raw.startsWith("https://", ignoreCase = true)
+        if (!placeholder && !http) return chain.proceed()
+        val sized = if (placeholder) PluginCovers.sized(raw, coverPixels(chain.size)) ?: raw else raw
+        val plugin = if (sized.startsWith("http://", true) || sized.startsWith("https://", true)) {
+            PluginCovers.pluginImageHeaders(context, sized)
+        } else {
+            emptyMap()
+        }
+        if (sized == raw && plugin.isEmpty()) return chain.proceed()
+        val builder = chain.request.newBuilder().data(sized)
+        if (plugin.isNotEmpty()) {
+            val headers = chain.request.httpHeaders.newBuilder()
+            for ((name, value) in plugin) headers.set(name, value)
+            headers.set(PluginDataSource.STAY, plugin.keys.joinToString(","))
+            builder.httpHeaders(headers.build())
+        }
+        return chain.withRequest(builder.build()).proceed()
     }
 }
 
@@ -146,27 +215,3 @@ private fun storageText(records: PluginRecords, key: String): String {
     }
 }
 
-/**
- * Picture headers are for the host in the rule. OkHttp copies them onto a
- * redirect; drop those names when the host changes. Audio uses the player
- * client instead, which keeps a header on a child of the original host.
- */
-private class CrossHostStripper : Interceptor {
-    override fun intercept(chain: Interceptor.Chain): Response {
-        val request = chain.request()
-        val original = chain.call().request()
-        if (request.url.host.equals(original.url.host, ignoreCase = true)) {
-            return chain.proceed(request)
-        }
-        val builder = request.newBuilder()
-        for (name in original.headers.names()) {
-            if (name.lowercase() in KEEP) continue
-            builder.removeHeader(name)
-        }
-        return chain.proceed(builder.build())
-    }
-
-    private companion object {
-        val KEEP = setOf("user-agent", "accept", "accept-language", "range")
-    }
-}

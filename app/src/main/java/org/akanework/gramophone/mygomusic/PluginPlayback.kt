@@ -32,6 +32,18 @@ internal fun pluginMediaId(pluginId: String, trackId: String): String {
     return "plugin:${Uri.encode(pluginId)}:${Uri.encode(trackId)}"
 }
 
+/** The first raw colon separates the two encoded ids. */
+internal fun parsePluginMediaId(mediaId: String): Pair<String, String>? {
+    if (!mediaId.startsWith("plugin:")) return null
+    val rest = mediaId.removePrefix("plugin:")
+    val split = rest.indexOf(':')
+    if (split <= 0 || split >= rest.lastIndex) return null
+    val pluginId = Uri.decode(rest.substring(0, split))
+    val trackId = Uri.decode(rest.substring(split + 1))
+    if (!isPluginId(pluginId) || trackId.isEmpty()) return null
+    return pluginId to trackId
+}
+
 internal fun playUri(pluginId: String, trackId: String): Uri {
     return "$PLAY_SCHEME://play/${Uri.encode(pluginId)}/${Uri.encode(trackId)}".toUri()
 }
