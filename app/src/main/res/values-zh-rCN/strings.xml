@@ -154,6 +154,8 @@
     <string name="mygomusic_stream_only">本应用只播放 stream 插件。</string>
     <string name="mygomusic_open_settings">插件设置</string>
     <string name="mygomusic_sign_in">登录</string>
+    <string name="mygomusic_needs_sign_in">登录后才能查看。</string>
+    <string name="mygomusic_needs_setup">这个插件需要先进行设置。</string>
     <string name="mygomusic_unsave">取消收藏</string>
     <string name="mygomusic_home">首页</string>
     <string name="mygomusic_liked">我喜欢</string>

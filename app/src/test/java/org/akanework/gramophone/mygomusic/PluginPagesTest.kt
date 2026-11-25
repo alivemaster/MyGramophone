@@ -57,6 +57,29 @@ class PluginPagesTest {
     }
 
     @Test
+    fun signInKeepsRowsAlreadyListed() {
+        val groups = listOf(PluginGroup("Radio", listOf(PluginRow("Radio", "", null, Open.StationList, RowMenu()))))
+        val account = PluginPage.Account("setup", "Fill in the server")
+        val page = rootPage(groups, account, PluginPage.Message("failed"), PluginPage.Message("empty"))
+        val shown = page as PluginPage.Groups
+        assertEquals(groups, shown.groups)
+        assertEquals(account, shown.account)
+    }
+
+    @Test
+    fun failureStaysWhenNothingWasListed() {
+        val failure = PluginPage.Message("offline")
+        assertEquals(failure, rootPage(emptyList(), null, failure, PluginPage.Message("empty")))
+    }
+
+    @Test
+    fun signInWithoutRowsStaysAccount() {
+        val account = PluginPage.Account("signIn", "请先扫码登录网易云音乐")
+        val page = rootPage(emptyList(), account, PluginPage.Message("failed"), PluginPage.Message("empty"))
+        assertEquals(account, page)
+    }
+
+    @Test
     fun pluginTabIdStaysOffResourceIds() {
         val first = pluginTabId("netease")
         assertEquals(first, pluginTabId("netease"))

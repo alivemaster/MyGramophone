@@ -80,10 +80,25 @@ internal data class PluginGroup(
 )
 
 internal sealed interface PluginPage {
-    data class Groups(val title: String?, val groups: List<PluginGroup>) : PluginPage
+    data class Groups(
+        val title: String?,
+        val groups: List<PluginGroup>,
+        val account: Account? = null,
+    ) : PluginPage
     data class Tracks(val title: String, val tracks: List<PluginTrack>) : PluginPage
-    data class Account(val code: String) : PluginPage
+    data class Account(val code: String, val message: String) : PluginPage
     data class Message(val text: String) : PluginPage
+}
+
+/** A sign-in or setup failure must not throw away rows that were already listed. */
+internal fun rootPage(
+    groups: List<PluginGroup>,
+    account: PluginPage.Account?,
+    failure: PluginPage.Message?,
+    empty: PluginPage.Message,
+): PluginPage {
+    if (groups.isNotEmpty()) return PluginPage.Groups(null, groups, account)
+    return account ?: failure ?: empty
 }
 
 internal fun groupsFromPlaylists(
@@ -272,12 +287,13 @@ internal class PluginLibrary(context: Context) {
     suspend fun root(pluginId: String): PluginPage = load(pluginId) { ctx ->
         val caps = caps(ctx.exports)
         val groups = mutableListOf<PluginGroup>()
+        var account: PluginPage.Account? = null
         var failure: PluginPage.Message? = null
         val nav = ctx.manifest.navigation.ifEmpty { defaultNav() }
         for (item in nav) {
             when (val page = navGroup(ctx, item, caps)) {
                 null -> Unit
-                is PluginPage.Account -> return@load page
+                is PluginPage.Account -> if (account == null) account = page
                 is PluginPage.Message -> failure = page
                 is PluginPage.Groups -> groups += page.groups
                 is PluginPage.Tracks -> groups += PluginGroup(page.title, listOf(trackRow(page.title, page.tracks)))
@@ -288,14 +304,13 @@ internal class PluginLibrary(context: Context) {
                 val lists = asArray(ctx.runtime.call("playlists"))
                 PluginPage.Groups(null, groupsFromPlaylists(lists, app.getString(R.string.mygomusic_my_playlists), app.getString(R.string.mygomusic_saved_playlists), caps, songs))
             }) {
-                is PluginPage.Account -> return@load page
+                is PluginPage.Account -> if (account == null) account = page
                 is PluginPage.Message -> failure = page
                 is PluginPage.Groups -> groups += page.groups
                 else -> Unit
             }
         }
-        if (groups.isEmpty()) failure ?: PluginPage.Message(app.getString(R.string.mygomusic_empty))
-        else PluginPage.Groups(null, groups)
+        rootPage(groups, account, failure, PluginPage.Message(app.getString(R.string.mygomusic_empty)))
     }
 
     suspend fun browse(pluginId: String, page: String, title: String): PluginPage = load(pluginId) { ctx ->
@@ -475,7 +490,9 @@ internal class PluginLibrary(context: Context) {
     }
 
     private fun logged(pluginId: String, e: PluginCallException): PluginPage {
-        if (e.code == "signIn" || e.code == "setup") return PluginPage.Account(e.code)
+        if (e.code == "signIn" || e.code == "setup") {
+            return PluginPage.Account(e.code, e.message?.trim().orEmpty())
+        }
         Log.w(TAG, "plugin $pluginId", e)
         val message = e.message?.trim().orEmpty()
         return PluginPage.Message(message.ifEmpty { app.getString(R.string.mygomusic_plugin_failed) })

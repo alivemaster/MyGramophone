@@ -17,7 +17,6 @@
 
 package org.akanework.gramophone.mygomusic
 
-import android.content.Intent
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -115,10 +114,10 @@ class PluginPlaylistFragment : BaseFragment(null) {
 
     private fun onRow(row: PluginRow) {
         when (val open = row.open) {
-            is Open.Playlist -> openDetail(PluginPlaylistDetailFragment.KIND_PLAYLIST, open.id, row.title)
-            is Open.Album -> openDetail(PluginPlaylistDetailFragment.KIND_ALBUM, open.id, row.title)
-            is Open.Show -> openDetail(PluginPlaylistDetailFragment.KIND_SHOW, open.id, row.title)
-            Open.Liked -> openDetail(PluginPlaylistDetailFragment.KIND_LIKED, "", row.title)
+            is Open.Playlist -> openSongs(PluginPlaylistDetailFragment.KIND_PLAYLIST, open.id, row.title, open)
+            is Open.Album -> openSongs(PluginPlaylistDetailFragment.KIND_ALBUM, open.id, row.title, open)
+            is Open.Show -> openSongs(PluginPlaylistDetailFragment.KIND_SHOW, open.id, row.title, open)
+            Open.Liked -> openSongs(PluginPlaylistDetailFragment.KIND_LIKED, "", row.title, Open.Liked)
             is Open.Tracks -> openDetail(
                 PluginPlaylistDetailFragment.KIND_GIVEN,
                 "",
@@ -202,7 +201,7 @@ class PluginPlaylistFragment : BaseFragment(null) {
                             putInt(ARG_TOKEN, token)
                         }
                     }
-                    is PluginPage.Account -> render(result)
+                    is PluginPage.Account -> if (view != null) showPluginAccountDialog(requireActivity(), result)
                     is PluginPage.Message -> toast(result.text)
                 }
             } catch (e: CancellationException) {
@@ -238,6 +237,31 @@ class PluginPlaylistFragment : BaseFragment(null) {
         return scaffold.collapsing?.title?.toString()?.ifEmpty { null } ?: titleArg()
     }
 
+    private fun openSongs(kind: String, id: String, title: String, open: Open) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            scaffold.refresh.isRefreshing = true
+            try {
+                when (val page = library.songs(pluginId(), open, title)) {
+                    is PluginPage.Tracks -> openDetail(
+                        kind,
+                        id,
+                        page.title.ifEmpty { title },
+                        cache.putTracks(page.tracks),
+                    )
+                    is PluginPage.Account -> if (view != null) showPluginAccountDialog(requireActivity(), page)
+                    is PluginPage.Message -> toast(page.text)
+                    else -> toast(null)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                accountOrToast(e)
+            } finally {
+                if (view != null) scaffold.refresh.isRefreshing = false
+            }
+        }
+    }
+
     private fun openDetail(kind: String, id: String, title: String, token: Int = 0, reload: String = "") {
         mainActivity.startFragment(PluginPlaylistDetailFragment()) {
             putString(PluginPlaylistDetailFragment.ARG_PLUGIN, pluginId())
@@ -255,7 +279,7 @@ class PluginPlaylistFragment : BaseFragment(null) {
             try {
                 when (val page = library.stationTracks(pluginId(), id)) {
                     is PluginPage.Tracks -> PluginPlayback.play(mainActivity, pluginId(), page.tracks, 0, title)
-                    is PluginPage.Account -> render(page)
+                    is PluginPage.Account -> if (view != null) showPluginAccountDialog(requireActivity(), page)
                     is PluginPage.Message -> toast(page.text)
                     else -> Unit
                 }
@@ -275,7 +299,7 @@ class PluginPlaylistFragment : BaseFragment(null) {
             try {
                 when (val page = library.songs(pluginId(), row.open, row.title)) {
                     is PluginPage.Tracks -> block(page.tracks, page.title.ifEmpty { row.title })
-                    is PluginPage.Account -> render(page)
+                    is PluginPage.Account -> if (view != null) showPluginAccountDialog(requireActivity(), page)
                     is PluginPage.Message -> toast(page.text)
                     else -> Unit
                 }
@@ -364,30 +388,16 @@ class PluginPlaylistFragment : BaseFragment(null) {
                 scaffold.status.visibility = View.GONE
                 rows.submitGroups(page.groups)
                 if (!page.title.isNullOrEmpty()) scaffold.collapsing?.title = page.title
+                page.account?.let { showPluginAccountDialog(requireActivity(), it) }
             }
             is PluginPage.Tracks -> {
                 scaffold.status.visibility = View.GONE
                 if (page.title.isNotEmpty()) scaffold.collapsing?.title = page.title
                 rows.submitTracks(page.tracks)
             }
-            is PluginPage.Account -> showAccount(page.code)
+            is PluginPage.Account -> showPluginAccountDialog(requireActivity(), page)
             is PluginPage.Message -> showMessage(page.text)
         }
-    }
-
-    private fun showAccount(code: String) {
-        rows.clear()
-        scaffold.message.text = if (code == "setup") {
-            getString(R.string.mygomusic_open_settings)
-        } else {
-            getString(R.string.mygomusic_sign_in)
-        }
-        scaffold.action.visibility = View.VISIBLE
-        scaffold.action.setText(if (code == "setup") R.string.mygomusic_open_settings else R.string.mygomusic_sign_in)
-        scaffold.action.setOnClickListener {
-            startActivity(Intent(requireContext(), PluginListActivity::class.java))
-        }
-        scaffold.status.visibility = View.VISIBLE
     }
 
     private fun showMessage(text: String) {
@@ -399,8 +409,13 @@ class PluginPlaylistFragment : BaseFragment(null) {
 
     private fun accountOrToast(error: Exception) {
         val call = error as? PluginCallException
-        if (call?.code == "signIn" || call?.code == "setup") render(PluginPage.Account(call.code))
-        else toast(error.message)
+        if (call != null && (call.code == "signIn" || call.code == "setup")) {
+            if (view != null) {
+                showPluginAccountDialog(requireActivity(), PluginPage.Account(call.code, call.message?.trim().orEmpty()))
+            }
+            return
+        }
+        toast(error.message)
     }
 
     private fun toast(text: String?) {

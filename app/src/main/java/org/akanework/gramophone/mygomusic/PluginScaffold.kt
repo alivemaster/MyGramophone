@@ -17,18 +17,24 @@
 
 package org.akanework.gramophone.mygomusic
 
+import android.content.Intent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.TextView
+import androidx.appcompat.app.AlertDialog
 import androidx.coordinatorlayout.widget.CoordinatorLayout
+import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.google.android.material.appbar.AppBarLayout
 import com.google.android.material.appbar.CollapsingToolbarLayout
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.color.MaterialColors
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import org.akanework.gramophone.R
 import org.akanework.gramophone.logic.ui.MyRecyclerView
 
@@ -106,7 +112,48 @@ private fun scaffold(
 )
 
 private fun tint(refresh: SwipeRefreshLayout) {
+    // This library paints the disc behind the arrow as a fixed light gray.
+    refresh.setProgressBackgroundColorSchemeColor(
+        MaterialColors.getColor(refresh, com.google.android.material.R.attr.colorSurfaceContainerHigh),
+    )
     refresh.setColorSchemeColors(
         MaterialColors.getColor(refresh, androidx.appcompat.R.attr.colorPrimary),
     )
+}
+
+private var accountDialog: AlertDialog? = null
+
+/** Sign-in and setup stay in a dialog so the list underneath is left as it is. */
+internal fun showPluginAccountDialog(activity: FragmentActivity, account: PluginPage.Account) {
+    if (activity.isFinishing || accountDialog?.isShowing == true) return
+    val message = account.message.trim().ifEmpty {
+        activity.getString(
+            if (account.code == "setup") R.string.mygomusic_needs_setup else R.string.mygomusic_needs_sign_in,
+        )
+    }
+    val action = if (account.code == "setup") R.string.mygomusic_open_settings else R.string.mygomusic_sign_in
+    val dialog = MaterialAlertDialogBuilder(activity)
+        .setMessage(message)
+        .setPositiveButton(action) { _, _ ->
+            activity.startActivity(Intent(activity, PluginListActivity::class.java))
+        }
+        .setNegativeButton(android.R.string.cancel) { _, _ -> }
+        .setCancelable(true)
+        .create()
+    dialog.setCanceledOnTouchOutside(true)
+    var closing = false
+    val observer = object : DefaultLifecycleObserver {
+        override fun onDestroy(owner: LifecycleOwner) {
+            closing = true
+            if (accountDialog === dialog) accountDialog = null
+            dialog.dismiss()
+        }
+    }
+    activity.lifecycle.addObserver(observer)
+    dialog.setOnDismissListener {
+        if (!closing) activity.lifecycle.removeObserver(observer)
+        if (accountDialog === dialog) accountDialog = null
+    }
+    accountDialog = dialog
+    dialog.show()
 }

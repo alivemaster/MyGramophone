@@ -17,7 +17,6 @@
 
 package org.akanework.gramophone.mygomusic
 
-import android.content.Intent
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -120,8 +119,11 @@ class PluginPlaylistDetailFragment : BaseFragment(true) {
                 throw e
             } catch (e: Exception) {
                 val call = e as? PluginCallException
-                if (call?.code == "signIn" || call?.code == "setup") PluginPage.Account(call.code)
-                else PluginPage.Message(e.message?.ifBlank { null } ?: getString(R.string.mygomusic_plugin_failed))
+                if (call != null && (call.code == "signIn" || call.code == "setup")) {
+                    PluginPage.Account(call.code, call.message?.trim().orEmpty())
+                } else {
+                    PluginPage.Message(e.message?.ifBlank { null } ?: getString(R.string.mygomusic_plugin_failed))
+                }
             }
             if (view == null) return@launch
             scaffold.refresh.isRefreshing = false
@@ -131,7 +133,10 @@ class PluginPlaylistDetailFragment : BaseFragment(true) {
                     if (page.title.isNotEmpty()) scaffold.collapsing?.title = page.title
                     showTracks(page.tracks)
                 }
-                is PluginPage.Account -> showAccount(page.code)
+                is PluginPage.Account -> {
+                    showPluginAccountDialog(requireActivity(), page)
+                    if (tracks == null) parentFragmentManager.popBackStack()
+                }
                 is PluginPage.Message -> showMessage(page.text)
                 is PluginPage.Groups -> showMessage(getString(R.string.mygomusic_empty))
             }
@@ -160,17 +165,6 @@ class PluginPlaylistDetailFragment : BaseFragment(true) {
         }
         scaffold.status.visibility = View.GONE
         rows.submitTracks(list)
-    }
-
-    private fun showAccount(code: String) {
-        rows.clear()
-        scaffold.message.setText(if (code == "setup") R.string.mygomusic_open_settings else R.string.mygomusic_sign_in)
-        scaffold.action.visibility = View.VISIBLE
-        scaffold.action.setText(if (code == "setup") R.string.mygomusic_open_settings else R.string.mygomusic_sign_in)
-        scaffold.action.setOnClickListener {
-            startActivity(Intent(requireContext(), PluginListActivity::class.java))
-        }
-        scaffold.status.visibility = View.VISIBLE
     }
 
     private fun showMessage(text: String) {

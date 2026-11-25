@@ -331,6 +331,10 @@
     <string name="mygomusic_stream_only">This app only plays plugins that stream audio.</string>
     <string name="mygomusic_open_settings">Plugin settings</string>
     <string name="mygomusic_sign_in">Sign in</string>
+    <!-- Dialog text when sign-in is required and the plugin gave no message -->
+    <string name="mygomusic_needs_sign_in">Sign in to see this.</string>
+    <!-- Dialog text when setup is required and the plugin gave no message -->
+    <string name="mygomusic_needs_setup">This plugin needs setting up first.</string>
     <string name="mygomusic_unsave">Remove from saved</string>
     <string name="mygomusic_home">Home</string>
     <string name="mygomusic_liked">Liked songs</string>
