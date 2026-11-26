@@ -34,10 +34,44 @@ class PluginPagesTest {
             """[{"title":"Picked","tracks":[{"id":"t1","name":"Song","artists":[{"name":"A"}],"album":{"name":"Al"}}],"artists":[{"id":"a","name":"A"}]}]""",
         )
         val skipped = mutableListOf<String>()
-        val groups = groupsFromSections(sections, "Home", caps, { "$it" }) { _, kind -> skipped += kind }
+        val groups = groupsFromSections(sections, "Home", caps, { "$it" }, "See more") { _, kind -> skipped += kind }
         assertEquals(listOf("artists"), skipped)
         assertEquals(1, groups.single().rows.size)
         assertTrue(groups.single().rows.single().open is Open.Tracks)
+        assertTrue(groups.single().tracks.isEmpty())
+    }
+
+    @Test
+    fun tracksAndMorePageStayInTheSection() {
+        val sections = JSONArray(
+            """[{"title":"Recently Played","tracks":[{"id":"t1","name":"A"},{"id":"t2","name":"B"}],"morePage":"recentlyPlayed"}]""",
+        )
+        val group = groupsFromSections(sections, "Home", caps, { "$it" }, "See more") { _, _ -> }.single()
+        assertEquals(listOf("t1", "t2"), group.tracks.map { it.id })
+        val more = group.rows.single()
+        assertEquals("See more", more.title)
+        assertEquals("", more.subtitle)
+        assertEquals("recentlyPlayed", (more.open as Open.Page).page)
+    }
+
+    @Test
+    fun morePageBesideAlbumsIsSeeMore() {
+        val sections = JSONArray(
+            """[{"title":"Recently Added","albums":[{"id":"a","name":"Al"}],"morePage":"recentlyAdded"}]""",
+        )
+        val rows = groupsFromSections(sections, "Home", caps, { "$it" }, "See more") { _, _ -> }.single().rows
+        assertTrue(rows[0].open is Open.Album)
+        assertEquals("See more", rows[1].title)
+        assertEquals("recentlyAdded", (rows[1].open as Open.Page).page)
+    }
+
+    @Test
+    fun morePageAloneKeepsTheSectionTitle() {
+        val sections = JSONArray("""[{"title":"Artists","subtitle":"All of them","morePage":"artists"}]""")
+        val row = groupsFromSections(sections, "Home", caps, { "$it" }, "See more") { _, _ -> }.single().rows.single()
+        assertEquals("Artists", row.title)
+        assertEquals("All of them", row.subtitle)
+        assertEquals("artists", (row.open as Open.Page).page)
     }
 
     @Test

@@ -51,7 +51,7 @@ internal class PluginRowsAdapter(
     private val pluginId: String,
     private val onRow: (PluginRow) -> Unit,
     private val onRowMenu: (PluginRow, View) -> Unit,
-    private val onTrack: (List<PluginTrack>, Int) -> Unit,
+    private val onTrack: (List<PluginTrack>, Int, String) -> Unit,
     private val onTrackMenu: (PluginTrack, View) -> Unit,
     private val onPlayAll: (List<PluginTrack>, Boolean) -> Unit,
     private val onCreate: () -> Unit,
@@ -107,12 +107,15 @@ internal class PluginRowsAdapter(
         entries = buildList {
             if (rows > 0) add(Entry.Decor(rows, false))
             for (group in groups) {
-                if (group.rows.isEmpty() && !group.counted) continue
+                if (group.rows.isEmpty() && group.tracks.isEmpty() && !group.counted) continue
                 val only = group.rows.singleOrNull()
-                if (group.title.isNotEmpty() && (group.counted || only == null || only.title != group.title)) {
+                if (group.title.isNotEmpty() && (group.counted || group.tracks.isNotEmpty() || only == null || only.title != group.title)) {
                     add(Entry.Header(group.title))
                 }
                 if (group.counted) add(Entry.Decor(group.rows.size, false, group.create))
+                group.tracks.forEachIndexed { index, track ->
+                    add(Entry.Track(track, index, group.tracks, group.title))
+                }
                 group.rows.forEach { add(Entry.Row(it)) }
             }
         }
@@ -123,7 +126,7 @@ internal class PluginRowsAdapter(
         tracks = list
         entries = buildList {
             if (list.isNotEmpty()) add(Entry.Decor(list.size, true))
-            list.forEachIndexed { index, track -> add(Entry.Track(track, index)) }
+            list.forEachIndexed { index, track -> add(Entry.Track(track, index, null, "")) }
         }
         notifyDataSetChanged()
     }
@@ -167,7 +170,7 @@ internal class PluginRowsAdapter(
         next.add(toPos, next.removeAt(fromPos))
         var index = 0
         entries = next.map { entry ->
-            if (entry is Entry.Track) Entry.Track(entry.track, index++) else entry
+            if (entry is Entry.Track) entry.copy(index = index++) else entry
         }
         notifyItemMoved(fromPos, toPos)
     }
@@ -271,8 +274,8 @@ internal class PluginRowsAdapter(
         holder.more.visibility = View.VISIBLE
         // A track the source cannot play still takes the click, so the ripple stays.
         holder.itemView.setOnClickListener {
-            val current = currentTrack(holder) ?: return@setOnClickListener
-            if (!current.unavailable) onTrack(tracks, trackIndex(holder.bindingAdapterPosition))
+            val current = trackEntry(holder) ?: return@setOnClickListener
+            if (!current.track.unavailable) onTrack(current.queue ?: tracks, current.index, current.queueTitle)
         }
         if (reorderEnabled) {
             // The drag helper takes the long press. The more button still opens the menu.
@@ -336,12 +339,14 @@ internal class PluginRowsAdapter(
         }
     }
 
-    private fun currentTrack(holder: RowHolder): PluginTrack? {
-        return tracks.getOrNull(trackIndex(holder.bindingAdapterPosition))
+    private fun currentTrack(holder: RowHolder): PluginTrack? = trackEntry(holder)?.track
+
+    private fun trackEntry(holder: RowHolder): Entry.Track? {
+        return entries.getOrNull(holder.bindingAdapterPosition) as? Entry.Track
     }
 
     private fun notifyPlaying() {
-        if (tracks.isEmpty()) return
+        if (entries.none { it is Entry.Track }) return
         notifyDataSetChanged()
     }
 
@@ -349,7 +354,13 @@ internal class PluginRowsAdapter(
         data class Decor(val count: Int, val tracks: Boolean, val create: Boolean = false) : Entry
         data class Header(val title: String) : Entry
         data class Row(val row: PluginRow) : Entry
-        data class Track(val track: PluginTrack, val index: Int) : Entry
+        /** [queue] null uses the track page's live list, which drag reorders. */
+        data class Track(
+            val track: PluginTrack,
+            val index: Int,
+            val queue: List<PluginTrack>?,
+            val queueTitle: String,
+        ) : Entry
     }
 
     private class DecorHolder(view: View) : RecyclerView.ViewHolder(view) {

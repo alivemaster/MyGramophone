@@ -152,6 +152,11 @@ internal data class PluginGroup(
     val counted: Boolean = false,
     /** The count bar shows the add button. Requires [counted] and `createPlaylist`. */
     val create: Boolean = false,
+    /**
+     * Tracks listed under the title. Only a section that also has `morePage` carries these;
+     * the more page is then a row, and these tracks are not also collapsed into one.
+     */
+    val tracks: List<PluginTrack> = emptyList(),
 )
 
 internal sealed interface PluginPage {
@@ -214,6 +219,7 @@ internal fun groupsFromSections(
     fallbackTitle: String,
     caps: PluginCaps,
     songs: (Int) -> String,
+    seeMore: String,
     skip: (String, String) -> Unit,
 ): List<PluginGroup> {
     if (sections == null) return emptyList()
@@ -223,7 +229,10 @@ internal fun groupsFromSections(
         val title = section.str("title").ifEmpty { section.str("pageTitle") }.ifEmpty { fallbackTitle }
         val rows = mutableListOf<PluginRow>()
         val tracks = parseTracks(section.optJSONArray("tracks"))
-        if (tracks.isNotEmpty()) {
+        val more = section.str("morePage")
+        // Tracks plus a more page stay in this group. Tracks alone collapse into one row.
+        val inline = tracks.isNotEmpty() && more.isNotEmpty()
+        if (tracks.isNotEmpty() && !inline) {
             val rowTitle = section.str("pageTitle").ifEmpty { section.str("title") }.ifEmpty { fallbackTitle }
             rows += PluginRow(rowTitle, songs(tracks.size), null, Open.Tracks(tracks), RowMenu(play = true))
         }
@@ -234,17 +243,23 @@ internal fun groupsFromSections(
         rows += showRows(section.optJSONArray("shows"))
         rows += stationRows(section.optJSONArray("stations"))
         rows += linkRows(section.optJSONArray("links"))
-        val more = section.str("morePage")
         if (more.isNotEmpty()) {
-            val moreTitle = section.str("pageTitle").ifEmpty { section.str("title") }.ifEmpty { fallbackTitle }
-            rows += PluginRow(moreTitle, section.str("subtitle"), null, Open.Page(more), RowMenu())
+            // A more page beside other rows is "see more". Alone, it keeps the section title so the row can be opened.
+            val beside = rows.isNotEmpty() || inline
+            val moreTitle = if (beside) {
+                seeMore
+            } else {
+                section.str("pageTitle").ifEmpty { section.str("title") }.ifEmpty { fallbackTitle }
+            }
+            val subtitle = if (beside) "" else section.str("subtitle")
+            rows += PluginRow(moreTitle, subtitle, null, Open.Page(more), RowMenu())
         }
         if (rows.isEmpty()) {
             val empty = section.str("empty")
             if (empty.isEmpty()) continue
             rows += PluginRow(empty, "", null, Open.None, RowMenu())
         }
-        groups += PluginGroup(title, rows)
+        groups += PluginGroup(title, rows, tracks = if (inline) tracks else emptyList())
     }
     return groups
 }
@@ -537,7 +552,7 @@ internal class PluginLibrary(context: Context) {
                 "home" -> if ("home" !in ctx.exports) null else catch(ctx.pluginId) {
                     val obj = asObject(ctx.runtime.call("home"))
                     val title = navTitle(ctx.manifest, item, R.string.mygomusic_home)
-                    PluginPage.Groups(title, groupsFromSections(obj.optJSONArray("sections"), title, caps, songs) { section, kind ->
+                    PluginPage.Groups(title, groupsFromSections(obj.optJSONArray("sections"), title, caps, songs, seeMore()) { section, kind ->
                         Log.w(TAG, "plugin ${ctx.pluginId} skipped $kind in $section")
                     })
                 }
@@ -562,7 +577,7 @@ internal class PluginLibrary(context: Context) {
     }
 
     private fun opened(obj: JSONObject, title: String, caps: PluginCaps, exports: Set<String>): PluginPage {
-        val groups = groupsFromSections(obj.optJSONArray("sections"), title, caps, songs) { section, kind ->
+        val groups = groupsFromSections(obj.optJSONArray("sections"), title, caps, songs, seeMore()) { section, kind ->
             Log.w(TAG, "skipped $kind in $section")
         }
         val rows = groups.flatMap { it.rows }
@@ -631,6 +646,8 @@ internal class PluginLibrary(context: Context) {
     private val songs: (Int) -> String = { count ->
         app.resources.getQuantityString(R.plurals.songs, count, count)
     }
+
+    private fun seeMore(): String = app.getString(R.string.mygomusic_see_more)
 
     private suspend fun catch(pluginId: String, block: suspend () -> PluginPage): PluginPage {
         return try {

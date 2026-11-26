@@ -602,6 +602,7 @@
     <string name="mygomusic_saved_albums">收藏的專輯</string>
     <string name="mygomusic_stations">電台</string>
     <string name="mygomusic_shows">播客</string>
+    <string name="mygomusic_see_more">查看更多</string>
     <string name="mygomusic_plugin_failed">外掛程式沒能列出這些內容。</string>
     <string name="mygomusic_playback">播放</string>
     <string name="mygomusic_quality">音質</string>

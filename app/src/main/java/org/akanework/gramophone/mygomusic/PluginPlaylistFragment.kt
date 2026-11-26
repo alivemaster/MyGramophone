@@ -59,8 +59,8 @@ class PluginPlaylistFragment : BaseFragment(null) {
             pluginId = pluginId(),
             onRow = ::onRow,
             onRowMenu = ::onRowMenu,
-            onTrack = { list, index ->
-                PluginPlayback.play(mainActivity, pluginId(), list, index, currentTitle())
+            onTrack = { list, index, title ->
+                PluginPlayback.play(mainActivity, pluginId(), list, index, title.ifEmpty { currentTitle() })
             },
             onTrackMenu = ::onTrackMenu,
             onPlayAll = { list, shuffle ->
@@ -224,9 +224,8 @@ class PluginPlaylistFragment : BaseFragment(null) {
     }
 
     private fun onTrackMenu(track: PluginTrack, anchor: View) {
-        val page = shown as? PluginPage.Tracks
         PopupMenu(requireContext(), anchor).showPluginTrackMenu(
-            add = page?.add == true,
+            add = pageAdd(),
             remove = false,
             onPlayNext = { PluginPlayback.playNext(mainActivity, pluginId(), listOf(track)) },
             onQueue = { PluginPlayback.enqueue(mainActivity, pluginId(), listOf(track)) },

@@ -57,8 +57,8 @@ class PluginPlaylistDetailFragment : BaseFragment(true) {
             pluginId = pluginId(),
             onRow = {},
             onRowMenu = { _, _ -> },
-            onTrack = { list, index ->
-                PluginPlayback.play(mainActivity, pluginId(), list, index, titleArg())
+            onTrack = { list, index, title ->
+                PluginPlayback.play(mainActivity, pluginId(), list, index, title.ifEmpty { titleArg() })
             },
             onTrackMenu = ::onTrackMenu,
             onPlayAll = { list, shuffle ->

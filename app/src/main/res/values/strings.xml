@@ -378,6 +378,7 @@
     <string name="mygomusic_saved_albums">Saved albums</string>
     <string name="mygomusic_stations">Radio</string>
     <string name="mygomusic_shows">Podcasts</string>
+    <string name="mygomusic_see_more">See more</string>
     <string name="mygomusic_plugin_failed">The plugin could not load this list.</string>
     <!-- Category on the plugin list for how plugin audio is requested -->
     <string name="mygomusic_playback">Playback</string>

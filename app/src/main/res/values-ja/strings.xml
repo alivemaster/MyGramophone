@@ -598,6 +598,7 @@
     <string name="mygomusic_saved_albums">保存したアルバム</string>
     <string name="mygomusic_stations">ラジオ</string>
     <string name="mygomusic_shows">ポッドキャスト</string>
+    <string name="mygomusic_see_more">もっと見る</string>
     <string name="mygomusic_plugin_failed">プラグインはこの一覧を読み込めませんでした。</string>
     <string name="mygomusic_playback">再生</string>
     <string name="mygomusic_quality">音質</string>
