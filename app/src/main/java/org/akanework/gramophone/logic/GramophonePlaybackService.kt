@@ -107,6 +107,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -114,8 +115,15 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.guava.future
 import kotlinx.coroutines.guava.await
 import org.akanework.gramophone.R
+import org.akanework.gramophone.mygomusic.PLUGIN_LIKE
+import org.akanework.gramophone.mygomusic.PLUGIN_LIKE_CODE
+import org.akanework.gramophone.mygomusic.PLUGIN_LIKE_MESSAGE
+import org.akanework.gramophone.mygomusic.PluginCallException
 import org.akanework.gramophone.mygomusic.PluginDataSource
+import org.akanework.gramophone.mygomusic.PluginLikes
 import org.akanework.gramophone.mygomusic.PluginLyrics
+import org.akanework.gramophone.mygomusic.parsePluginMediaId
+import org.akanework.gramophone.mygomusic.withPluginHeart
 import org.akanework.gramophone.logic.ui.MeiZuLyricsMediaNotificationProvider
 import org.akanework.gramophone.logic.ui.isManualNotificationUpdate
 import org.akanework.gramophone.logic.utils.AfFormatInfo
@@ -208,6 +216,9 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
     private lateinit var libraryTreeLoader: LibraryTreeLoader
 
     private var controller: MediaBrowser? = null
+    private var likeJob: Job? = null
+    @Volatile private var heartTrackId: String? = null
+    @Volatile private var heartEpoch = 0
     lateinit var qb: QueueBoard
     private val sendLyrics = Runnable { scheduleSendingLyrics(false) }
     var lyrics: SemanticLyrics? = null
@@ -259,8 +270,15 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
         else
             customCommands[0]
 
-    private fun getFavoriteCommand(): CommandButton {
-        val isFavorite = (controller?.currentMediaItem?.mediaMetadata?.userRating as? HeartRating)?.isHeart == true
+    private fun getFavoriteCommand(): CommandButton? {
+        val item = controller?.currentMediaItem
+        val extras = item?.mediaMetadata?.extras
+        if (item != null && parsePluginMediaId(item.mediaId) != null &&
+            extras?.containsKey(PLUGIN_LIKE) == true && !extras.getBoolean(PLUGIN_LIKE)
+        ) {
+            return null
+        }
+        val isFavorite = (item?.mediaMetadata?.userRating as? HeartRating)?.isHeart == true
         return if (isFavorite) {
             customCommands[6]
         } else {
@@ -667,6 +685,7 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
                         controller?.let { controller ->
                             for (i in 0..<controller.mediaItemCount) {
                                 val item = controller.getMediaItemAt(i)
+                                if (parsePluginMediaId(item.mediaId) != null) continue
                                 val isHeart = (item.mediaMetadata.userRating as? HeartRating)
                                     ?.isHeart == true
                                 val shouldBeHeart = ids.contains(item.mediaId)
@@ -706,6 +725,125 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
         return super.onStartCommand(intent, flags, startId)
     }
 
+    /**
+     * Asks the source whether this track is liked, then writes that onto the
+     * queue item. A click that starts while the answer is in flight keeps
+     * what the click set.
+     */
+    private fun requestPluginHeart(mediaItem: MediaItem): Job {
+        val (pluginId, trackId) = parsePluginMediaId(mediaItem.mediaId)!!
+        val mediaId = mediaItem.mediaId
+        val episode = PluginLikes.episode(mediaItem)
+        val epoch = heartEpoch
+        return lifecycleScope.launch(Dispatchers.Default) {
+            val names = try {
+                PluginLikes.exports(this@GramophonePlaybackService, pluginId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "plugin $pluginId likes", e)
+                return@launch
+            }
+            if (heartEpoch != epoch) return@launch
+            val can = PluginLikes.canLike(names, episode)
+            if (!can) {
+                withContext(Dispatchers.Main) {
+                    if (heartEpoch != epoch) return@withContext
+                    if (controller?.currentMediaItem?.mediaId != mediaId) return@withContext
+                    replacePluginHeart(mediaId, false, false)
+                }
+                return@launch
+            }
+            withContext(Dispatchers.Main) {
+                if (heartEpoch != epoch) return@withContext
+                if (controller?.currentMediaItem?.mediaId != mediaId) return@withContext
+                val current = controller?.currentMediaItem ?: return@withContext
+                if (current.mediaMetadata.extras?.containsKey(PLUGIN_LIKE) != true) {
+                    replacePluginHeart(mediaId, true, null)
+                }
+            }
+            if (heartEpoch != epoch) return@launch
+            val liked = PluginLikes.isLiked(this@GramophonePlaybackService, pluginId, trackId)
+            withContext(Dispatchers.Main) {
+                if (heartEpoch != epoch) return@withContext
+                if (controller?.currentMediaItem?.mediaId != mediaId) return@withContext
+                replacePluginHeart(mediaId, true, liked)
+            }
+        }
+    }
+
+    private fun setPluginRating(
+        mediaId: String,
+        pluginId: String,
+        trackId: String,
+        rating: HeartRating,
+    ): ListenableFuture<SessionResult> {
+        heartEpoch++
+        val epoch = heartEpoch
+        val completion = SettableFuture.create<SessionResult>()
+        lifecycleScope.launch(Dispatchers.Default) {
+            try {
+                val episode = withContext(Dispatchers.Main) {
+                    pluginItem(mediaId)?.let { PluginLikes.episode(it) } == true
+                }
+                val names = PluginLikes.exports(this@GramophonePlaybackService, pluginId)
+                if (!PluginLikes.canLike(names, episode)) {
+                    withContext(Dispatchers.Main) {
+                        if (heartEpoch != epoch) return@withContext
+                        replacePluginHeart(mediaId, false, false)
+                    }
+                    completion.set(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
+                    return@launch
+                }
+                PluginLikes.set(
+                    this@GramophonePlaybackService,
+                    pluginId,
+                    trackId,
+                    episode,
+                    rating.isHeart,
+                )
+                withContext(Dispatchers.Main) {
+                    if (heartEpoch != epoch) return@withContext
+                    replacePluginHeart(mediaId, true, rating.isHeart)
+                }
+                completion.set(SessionResult(SessionResult.RESULT_SUCCESS))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "plugin $pluginId like", e)
+                withContext(Dispatchers.Main) {
+                    if (heartEpoch != epoch) return@withContext
+                    replacePluginHeart(mediaId, true, !rating.isHeart)
+                }
+                val call = e as? PluginCallException
+                val extras = Bundle().apply {
+                    putString(PLUGIN_LIKE_CODE, call?.code.orEmpty())
+                    putString(PLUGIN_LIKE_MESSAGE, (call?.message ?: e.message).orEmpty())
+                }
+                completion.set(SessionResult(SessionResult.RESULT_ERROR_INVALID_STATE, extras))
+            }
+        }
+        return completion
+    }
+
+    private fun pluginItem(mediaId: String): MediaItem? {
+        val player = controller ?: return null
+        for (i in 0 until player.mediaItemCount) {
+            val item = player.getMediaItemAt(i)
+            if (item.mediaId == mediaId) return item
+        }
+        return null
+    }
+
+    private fun replacePluginHeart(mediaId: String, canLike: Boolean, heart: Boolean?) {
+        val player = controller ?: return
+        for (i in 0 until player.mediaItemCount) {
+            val item = player.getMediaItemAt(i)
+            if (item.mediaId != mediaId) continue
+            player.replaceMediaItem(i, item.withPluginHeart(canLike, heart))
+        }
+    }
+
     override fun onSetRating(
         session: MediaSession,
         controller: MediaSession.ControllerInfo,
@@ -715,6 +853,9 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
         if (rating !is HeartRating) {
             return Futures.immediateFuture(SessionResult(
                 SessionResult.RESULT_ERROR_BAD_VALUE))
+        }
+        parsePluginMediaId(mediaId)?.let { (pluginId, trackId) ->
+            return setPluginRating(mediaId, pluginId, trackId, rating)
         }
         val completion = SettableFuture.create<SessionResult>()
         lifecycleScope.launch(Dispatchers.Default) {
@@ -859,11 +1000,11 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
         ) {
             if (this.controller?.currentTimeline?.isEmpty == false) {
                 builder.setMediaButtonPreferences(
-                    ImmutableList.of(
+                    ImmutableList.copyOf(listOfNotNull(
                         getRepeatCommand(),
                         getShufflingCommand(),
-                        getFavoriteCommand()
-                    )
+                        getFavoriteCommand(),
+                    ))
                 )
             }
         }
@@ -1581,6 +1722,19 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
     }
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+        // Writing the heart replaces this item. That can look like a new track,
+        // and asking isLiked again would fill a heart the listener just cleared.
+        val mediaId = mediaItem?.mediaId
+        val plugin = mediaId?.let { parsePluginMediaId(it) }
+        if (plugin == null) {
+            likeJob?.cancel()
+            likeJob = null
+            heartTrackId = null
+        } else if (mediaId != heartTrackId) {
+            likeJob?.cancel()
+            heartTrackId = mediaId
+            likeJob = requestPluginHeart(mediaItem)
+        }
         if (mediaItem?.localConfiguration?.uri?.scheme == "mygramophone") {
             lifecycleScope.launch(Dispatchers.IO) {
                 PluginDataSource.played(this@GramophonePlaybackService, mediaItem)
@@ -1684,6 +1838,7 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
         val favorites = gramophoneApplication.reader.playlistListFlow.map { it.find { p ->
             p is Favorite } }.first()?.songList?.map { it.mediaId } ?: emptyList()
         return mediaItems.map { item ->
+            if (parsePluginMediaId(item.mediaId) != null) return@map item
             val isHeart = (item.mediaMetadata.userRating as? HeartRating)
                 ?.isHeart == true
             val shouldBeHeart = favorites.contains(item.mediaId)
@@ -1742,7 +1897,9 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
             ) {
                 mediaSession!!.setMediaButtonPreferences(
                     it, if (isEmpty) emptyList() else
-                        ImmutableList.of(getRepeatCommand(), getShufflingCommand(), getFavoriteCommand())
+                        ImmutableList.copyOf(listOfNotNull(
+                            getRepeatCommand(), getShufflingCommand(), getFavoriteCommand()
+                        ))
                 )
             }
         }

@@ -48,6 +48,7 @@ import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.SeekBar
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.viewModels
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.content.res.AppCompatResources
@@ -100,6 +101,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.slider.Slider
 import com.google.android.material.timepicker.MaterialTimePicker
 import com.google.android.material.timepicker.TimeFormat
+import com.google.common.util.concurrent.MoreExecutors
 import com.google.common.util.concurrent.Futures
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -131,6 +133,12 @@ import org.akanework.gramophone.logic.utils.AudioFormatDetector.SpatialFormat
 import org.akanework.gramophone.logic.utils.CalculationUtils
 import org.akanework.gramophone.logic.utils.ColorUtils
 import org.akanework.gramophone.logic.utils.Flags
+import org.akanework.gramophone.mygomusic.PLUGIN_LIKE
+import org.akanework.gramophone.mygomusic.PLUGIN_LIKE_CODE
+import org.akanework.gramophone.mygomusic.PLUGIN_LIKE_MESSAGE
+import org.akanework.gramophone.mygomusic.PluginPage
+import org.akanework.gramophone.mygomusic.parsePluginMediaId
+import org.akanework.gramophone.mygomusic.showPluginAccountDialog
 import org.akanework.gramophone.ui.MainActivity
 import org.akanework.gramophone.ui.fragments.ArtistSubFragment
 import org.akanework.gramophone.ui.fragments.DetailDialogFragment
@@ -1426,6 +1434,7 @@ class FullBottomSheet
         mediaItem: MediaItem?,
         reason: Int
     ) {
+        updateFavoriteAvailability(mediaItem?.mediaMetadata, mediaItem?.mediaId)
         if (instance?.mediaItemCount != 0) {
             bottomSheetFullCover.dispose()
             bottomSheetFullCover.loadNoPlaceholder(mediaItem?.mediaMetadata?.artworkUri) {
@@ -1453,12 +1462,23 @@ class FullBottomSheet
 
     override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) {
         val isHeart = (mediaMetadata.userRating as? HeartRating)?.isHeart == true
+        bottomSheetFavoriteButton.removeOnCheckedChangeListener(this)
         if (bottomSheetFavoriteButton.isChecked != isHeart) {
-            bottomSheetFavoriteButton.removeOnCheckedChangeListener(this)
-            bottomSheetFavoriteButton.isChecked =
-                (mediaMetadata.userRating as? HeartRating)?.isHeart == true
+            bottomSheetFavoriteButton.isChecked = isHeart
         }
+        updateFavoriteAvailability(mediaMetadata, instance?.currentMediaItem?.mediaId)
         bottomSheetFavoriteButton.addOnCheckedChangeListener(this) // see onCheckedChanged
+    }
+
+    /** A plugin track stays disabled until its source is known to export like or likeEpisode. */
+    private fun updateFavoriteAvailability(metadata: MediaMetadata?, mediaId: String?) {
+        val plugin = mediaId?.let { parsePluginMediaId(it) } != null
+        val extras = metadata?.extras
+        val canLike = !plugin || (
+            extras?.containsKey(PLUGIN_LIKE) == true && extras.getBoolean(PLUGIN_LIKE)
+            )
+        bottomSheetFavoriteButton.isEnabled = canLike
+        bottomSheetFavoriteButton.alpha = if (canLike) 1f else 0.38f
     }
 
     private fun updateDuration() {
@@ -1483,8 +1503,46 @@ class FullBottomSheet
     }
 
     override fun onCheckedChanged(button: MaterialButton?, isChecked: Boolean) {
-        instance?.currentMediaItem?.let { song ->
-            val entry = Entry.ofMediaItem(song)
+        val song = instance?.currentMediaItem
+        val plugin = song?.mediaId?.let { parsePluginMediaId(it) }
+        if (plugin != null) {
+            bottomSheetFavoriteButton.removeOnCheckedChangeListener(this) // see onMediaMetadataChanged
+            val future = instance?.setRating(HeartRating(isChecked))
+            if (future == null) {
+                bottomSheetFavoriteButton.addOnCheckedChangeListener(this)
+                return
+            }
+            val pluginId = plugin.first
+            future.addListener({
+                val result = try {
+                    future.get()
+                } catch (_: Exception) {
+                    null
+                }
+                activity.runOnUiThread {
+                    if (result == null || result.resultCode == SessionResult.RESULT_SUCCESS) return@runOnUiThread
+                    if (result.resultCode == SessionResult.RESULT_ERROR_NOT_SUPPORTED) return@runOnUiThread
+                    val code = result.extras.getString(PLUGIN_LIKE_CODE).orEmpty()
+                    val message = result.extras.getString(PLUGIN_LIKE_MESSAGE).orEmpty()
+                    if (code == "signIn" || code == "setup") {
+                        showPluginAccountDialog(
+                            activity,
+                            pluginId,
+                            PluginPage.Account(code, message),
+                        )
+                    } else {
+                        Toast.makeText(
+                            context,
+                            message.ifBlank { context.getString(R.string.mygomusic_plugin_failed) },
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    }
+                }
+            }, MoreExecutors.directExecutor())
+            return
+        }
+        song?.let {
+            val entry = Entry.ofMediaItem(it)
             if (entry != null)
                 activity.markIsFavoriteStatus(listOf(entry), isChecked)
         }

@@ -22,6 +22,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.core.net.toUri
+import androidx.media3.common.HeartRating
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -32,6 +33,9 @@ import java.util.Locale
 
 /** Album release text kept for the detail page. The source's own wording. */
 internal const val PLUGIN_RELEASED = "pluginReleased"
+
+/** Episode show id. Empty means the track is a song, so the heart uses like. */
+internal const val PLUGIN_SHOW = "pluginShow"
 
 internal const val PLAY_SCHEME = "mygramophone"
 
@@ -75,7 +79,7 @@ internal fun pluginTitle(context: Context, pluginId: String): String {
     }
 }
 
-private fun pluginLocale(context: Context): Locale {
+internal fun pluginLocale(context: Context): Locale {
     val config = context.resources.configuration
     return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
         config.locales[0]
@@ -93,11 +97,13 @@ internal fun PluginTrack.toMediaItem(pluginId: String): MediaItem {
         .setAlbumTitle(album.ifBlank { null })
         .setAlbumArtist(albumArtist.ifBlank { null })
         .setArtworkUri(imageUrl?.takeIf { it.isNotBlank() }?.toUri())
+        .setUserRating(HeartRating(false))
         .apply {
             if (durationMs > 0) setDurationMs(durationMs)
-            if (released.isNotEmpty()) {
-                setExtras(Bundle().apply { putString(PLUGIN_RELEASED, released) })
-            }
+            val extras = Bundle()
+            if (released.isNotEmpty()) extras.putString(PLUGIN_RELEASED, released)
+            if (showId.isNotEmpty()) extras.putString(PLUGIN_SHOW, showId)
+            if (!extras.isEmpty) setExtras(extras)
         }
         .build()
     return MediaItem.Builder()

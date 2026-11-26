@@ -38,6 +38,8 @@ internal data class PluginTrack(
     val albumArtist: String = "",
     /** Album release text as the source wrote it, such as a year or a date. */
     val released: String = "",
+    /** Set for an episode. The heart then uses likeEpisode, not like. */
+    val showId: String = "",
 )
 
 internal data class PluginCaps(
@@ -274,6 +276,7 @@ internal fun parseTracks(arr: JSONArray?): List<PluginTrack> {
                     (obj.opt("duration") as? Number)?.toLong() ?: 0,
                     artistNames(album?.optJSONArray("artists")),
                     album?.str("released").orEmpty(),
+                    obj.str("showId"),
                 ),
             )
         }

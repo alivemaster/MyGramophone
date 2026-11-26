@@ -19,6 +19,7 @@ package org.akanework.gramophone.mygomusic
 
 import android.net.Uri
 import androidx.core.net.toUri
+import androidx.media3.common.HeartRating
 import okhttp3.Request
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -215,6 +216,34 @@ class PluginDataSourceTest {
         assertEquals(125_000L, item.mediaMetadata.durationMs)
         assertEquals("2024-03-01", item.mediaMetadata.extras?.getString(PLUGIN_RELEASED))
         assertEquals("plugin:demo:1", item.mediaId)
+        assertFalse((item.mediaMetadata.userRating as HeartRating).isHeart)
+        assertFalse(PluginLikes.episode(item))
+    }
+
+    @Test
+    fun episodeUsesShowIdAndHeartKeepsTheOtherFields() {
+        val item = PluginTrack(
+            id = "ep",
+            name = "第一期",
+            artists = "A",
+            album = "",
+            imageUrl = null,
+            showId = "show-5",
+            released = "2020",
+        ).toMediaItem("demo")
+        assertEquals("show-5", item.mediaMetadata.extras?.getString(PLUGIN_SHOW))
+        assertTrue(PluginLikes.episode(item))
+        assertFalse(PluginLikes.canLike(setOf("like"), episode = true))
+        assertTrue(PluginLikes.canLike(setOf("like", "likeEpisode"), episode = true))
+        assertTrue(PluginLikes.canLike(setOf("like"), episode = false))
+        assertFalse(PluginLikes.canLike(emptySet(), episode = false))
+        val next = item.withPluginHeart(true, true)
+        assertEquals("2020", next.mediaMetadata.extras?.getString(PLUGIN_RELEASED))
+        assertEquals("show-5", next.mediaMetadata.extras?.getString(PLUGIN_SHOW))
+        assertTrue(next.mediaMetadata.extras!!.getBoolean(PLUGIN_LIKE))
+        assertTrue((next.mediaMetadata.userRating as HeartRating).isHeart)
+        assertTrue(PluginLikes.likedFlag(mapOf("ep" to true, "other" to false), "ep"))
+        assertFalse(PluginLikes.likedFlag(mapOf("ep" to true), "missing"))
     }
 
     @Test

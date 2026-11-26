@@ -124,6 +124,7 @@ class PluginStore(private val root: File) {
             remember(manifest.id)
         } finally {
             PluginHeaderCache.invalidate()
+            PluginLikes.clear()
         }
     }
 
@@ -141,6 +142,7 @@ class PluginStore(private val root: File) {
         val order = readOrder()
         if (order.remove(id)) writeOrder(order)
         PluginHeaderCache.invalidate()
+        PluginLikes.clear()
     }
 
     fun readOrigin(dir: File): PluginOrigin {
