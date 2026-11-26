@@ -1,0 +1,18 @@
+{
+  "name": "mygramophone-url-polyfill",
+  "private": true,
+  "description": "Bundle whatwg-url for the QuickJS plugin runtime.",
+  "scripts": {
+    "build": "node build.js",
+    "test": "node test.js"
+  },
+  "dependencies": {
+    "whatwg-url": "14.2.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true
+  }
+}

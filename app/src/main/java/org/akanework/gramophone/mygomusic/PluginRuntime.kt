@@ -186,6 +186,8 @@ internal class PluginRuntime(
                             delay(ms.coerceIn(0L, 60_000L))
                         }
                     }
+                    // QuickJS has no URL. Plugins call the WHATWG one; the script is whatwg-url.
+                    evaluate<Any?>(urlScript, filename = "mygramophone-url.js")
                     evaluate<Any?>(FETCH_SHIM, filename = "mygramophone-fetch.js")
                     evaluate<Any?>(TIMER_SHIM, filename = "mygramophone-timers.js")
                     addModule(specifier, source)
@@ -230,6 +232,12 @@ internal class PluginRuntime(
     private companion object {
         const val TAG = "Mygomusic"
         const val CALLER = "mygramophone-call.js"
+        val urlScript: String by lazy {
+            val stream = PluginRuntime::class.java.classLoader
+                ?.getResourceAsStream("mygomusic/url.js")
+                ?: throw IllegalStateException("mygomusic/url.js")
+            stream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+        }
         val FETCH_SHIM = """
             globalThis.fetch = async function (input, init) {
               let url = input;
