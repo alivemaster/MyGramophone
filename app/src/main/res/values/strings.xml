@@ -364,7 +364,15 @@
     <string name="mygomusic_needs_sign_in">Sign in to see this.</string>
     <!-- Dialog text when setup is required and the plugin gave no message -->
     <string name="mygomusic_needs_setup">This plugin needs setting up first.</string>
-    <string name="mygomusic_unsave">Remove from saved</string>
+    <string name="mygomusic_unsave">Remove from Saved</string>
+    <string name="mygomusic_save">Save</string>
+    <string name="mygomusic_add_to_playlist">Add to Playlist</string>
+    <string name="mygomusic_remove_from_playlist">Remove from Playlist</string>
+    <string name="mygomusic_new_playlist">New Playlist</string>
+    <string name="mygomusic_new_playlist_item">New Playlist…</string>
+    <string name="mygomusic_playlist_name">Playlist Name</string>
+    <string name="mygomusic_create">Create</string>
+    <string name="mygomusic_added">Added to the playlist</string>
     <string name="mygomusic_home">Home</string>
     <string name="mygomusic_liked">Liked songs</string>
     <string name="mygomusic_saved_albums">Saved albums</string>

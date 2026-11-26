@@ -175,6 +175,14 @@
     <string name="mygomusic_needs_sign_in">登录后才能查看。</string>
     <string name="mygomusic_needs_setup">这个插件需要先进行设置。</string>
     <string name="mygomusic_unsave">取消收藏</string>
+    <string name="mygomusic_save">收藏</string>
+    <string name="mygomusic_add_to_playlist">添加到歌单</string>
+    <string name="mygomusic_remove_from_playlist">从歌单中移除</string>
+    <string name="mygomusic_new_playlist">新建歌单</string>
+    <string name="mygomusic_new_playlist_item">新建歌单…</string>
+    <string name="mygomusic_playlist_name">歌单名称</string>
+    <string name="mygomusic_create">创建</string>
+    <string name="mygomusic_added">已添加到歌单</string>
     <string name="mygomusic_home">首页</string>
     <string name="mygomusic_liked">我喜欢</string>
     <string name="mygomusic_saved_albums">收藏的专辑</string>

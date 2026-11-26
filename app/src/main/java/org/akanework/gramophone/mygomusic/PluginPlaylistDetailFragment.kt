@@ -25,6 +25,7 @@ import android.widget.Toast
 import androidx.appcompat.widget.PopupMenu
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.ItemTouchHelper
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -38,6 +39,10 @@ class PluginPlaylistDetailFragment : BaseFragment(true) {
     private val cache: PluginPageCache by activityViewModels()
     private var tracks: List<PluginTrack>? = null
     private var loadJob: Job? = null
+    private var canAdd = false
+    private var canRemove = false
+    private var canMove = false
+    private var moving = false
     private lateinit var scaffold: PluginScaffold
     private lateinit var rows: PluginRowsAdapter
 
@@ -59,7 +64,9 @@ class PluginPlaylistDetailFragment : BaseFragment(true) {
             onPlayAll = { list, shuffle ->
                 PluginPlayback.playAll(mainActivity, pluginId(), list, titleArg(), shuffle)
             },
+            onCreate = {},
         )
+        ItemTouchHelper(PluginTrackMoveCallback(rows, ::onTracksMoved)).attachToRecyclerView(scaffold.list)
         scaffold.list.adapter = rows
         scaffold.list.enableEdgeToEdgePaddingListener()
         scaffold.appBar?.enableEdgeToEdgePaddingListener()
@@ -69,6 +76,9 @@ class PluginPlaylistDetailFragment : BaseFragment(true) {
             requireActivity().supportFragmentManager.popBackStack()
         }
         scaffold.refresh.setOnRefreshListener { load(force = true) }
+        canAdd = requireArguments().getBoolean(ARG_ADD)
+        canRemove = requireArguments().getBoolean(ARG_REMOVE)
+        canMove = requireArguments().getBoolean(ARG_MOVE)
         val token = requireArguments().getInt(ARG_TOKEN, 0)
         val cached = if (token != 0) cache.tracks(token) else null
         if (cached != null) {
@@ -89,22 +99,81 @@ class PluginPlaylistDetailFragment : BaseFragment(true) {
     }
 
     private fun onTrackMenu(track: PluginTrack, anchor: View) {
-        val popup = PopupMenu(requireContext(), anchor)
-        popup.inflate(R.menu.more_menu_less)
-        popup.setOnMenuItemClickListener { item ->
-            when (item.itemId) {
-                R.id.play_next -> {
-                    PluginPlayback.playNext(mainActivity, pluginId(), listOf(track))
-                    true
+        PopupMenu(requireContext(), anchor).showPluginTrackMenu(
+            add = canAdd,
+            remove = canRemove,
+            onPlayNext = { PluginPlayback.playNext(mainActivity, pluginId(), listOf(track)) },
+            onQueue = { PluginPlayback.enqueue(mainActivity, pluginId(), listOf(track)) },
+            onAdd = { addTrack(track) },
+            onRemove = { removeTrack(track) },
+        )
+    }
+
+    private fun addTrack(track: PluginTrack) {
+        choosePluginPlaylist(
+            pluginId(),
+            library,
+            busy = { scaffold.refresh.isRefreshing = it },
+            onNew = {
+                createPluginPlaylist(pluginId(), library, track.id) { id ->
+                    if (kind() == KIND_PLAYLIST && id == idArg()) load(force = true)
+                    else if (id.isNotEmpty()) {
+                        Toast.makeText(requireContext(), R.string.mygomusic_added, Toast.LENGTH_SHORT).show()
+                    }
                 }
-                R.id.add_to_queue -> {
-                    PluginPlayback.enqueue(mainActivity, pluginId(), listOf(track))
-                    true
+            },
+        ) { id ->
+            viewLifecycleOwner.lifecycleScope.launch {
+                try {
+                    library.addTracks(pluginId(), id, listOf(track.id))
+                    if (view == null) return@launch
+                    if (kind() == KIND_PLAYLIST && id == idArg()) load(force = true)
+                    else Toast.makeText(requireContext(), R.string.mygomusic_added, Toast.LENGTH_SHORT).show()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    reportPluginCall(this@PluginPlaylistDetailFragment, pluginId(), e)
                 }
-                else -> false
             }
         }
-        popup.show()
+    }
+
+    private fun removeTrack(track: PluginTrack) {
+        val id = idArg()
+        if (kind() != KIND_PLAYLIST || id.isEmpty()) return
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                library.removeTracks(pluginId(), id, listOf(track.id))
+                load(force = true)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                reportPluginCall(this@PluginPlaylistDetailFragment, pluginId(), e)
+            }
+        }
+    }
+
+    private fun onTracksMoved(from: Int, to: Int) {
+        if (moving || kind() != KIND_PLAYLIST) return
+        val id = idArg()
+        if (id.isEmpty()) return
+        moving = true
+        rows.reorderEnabled = false
+        viewLifecycleOwner.lifecycleScope.launch {
+            var failed = false
+            try {
+                library.moveTrack(pluginId(), id, from, to)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                failed = true
+                reportPluginCall(this@PluginPlaylistDetailFragment, pluginId(), e)
+                load(force = true)
+            } finally {
+                moving = false
+                if (!failed && view != null) rows.reorderEnabled = canMove
+            }
+        }
     }
 
     private fun load(force: Boolean) {
@@ -129,6 +198,9 @@ class PluginPlaylistDetailFragment : BaseFragment(true) {
             scaffold.refresh.isRefreshing = false
             when (page) {
                 is PluginPage.Tracks -> {
+                    canAdd = page.add
+                    canRemove = page.remove
+                    canMove = page.move
                     tracks = page.tracks
                     if (page.title.isNotEmpty()) scaffold.collapsing?.title = page.title
                     showTracks(page.tracks)
@@ -146,19 +218,28 @@ class PluginPlaylistDetailFragment : BaseFragment(true) {
     private suspend fun fetch(): PluginPage {
         val title = titleArg()
         return when (kind()) {
-            KIND_PLAYLIST -> library.songs(pluginId(), Open.Playlist(idArg()), title)
+            KIND_PLAYLIST -> library.songs(
+                pluginId(),
+                Open.Playlist(
+                    idArg(),
+                    arguments?.getBoolean(ARG_MINE) == true,
+                    arguments?.getBoolean(ARG_FIXED) == true,
+                ),
+                title,
+            )
             KIND_ALBUM -> library.songs(pluginId(), Open.Album(idArg()), title)
             KIND_SHOW -> library.songs(pluginId(), Open.Show(idArg()), title)
             KIND_LIKED -> library.songs(pluginId(), Open.Liked, title)
             else -> {
                 val reload = arguments?.getString(ARG_RELOAD).orEmpty()
                 if (reload.isNotEmpty()) library.browse(pluginId(), reload, title)
-                else PluginPage.Tracks(title, tracks ?: emptyList())
+                else PluginPage.Tracks(title, tracks ?: emptyList(), canAdd, canRemove, canMove)
             }
         }
     }
 
     private fun showTracks(list: List<PluginTrack>) {
+        rows.reorderEnabled = canMove && list.isNotEmpty() && !moving
         if (list.isEmpty()) {
             showMessage(getString(R.string.mygomusic_empty))
             return
@@ -189,6 +270,11 @@ class PluginPlaylistDetailFragment : BaseFragment(true) {
         const val ARG_TITLE = "title"
         const val ARG_TOKEN = "token"
         const val ARG_RELOAD = "reload"
+        const val ARG_ADD = "add"
+        const val ARG_REMOVE = "remove"
+        const val ARG_MOVE = "move"
+        const val ARG_MINE = "mine"
+        const val ARG_FIXED = "fixed"
         const val KIND_PLAYLIST = "playlist"
         const val KIND_ALBUM = "album"
         const val KIND_SHOW = "show"

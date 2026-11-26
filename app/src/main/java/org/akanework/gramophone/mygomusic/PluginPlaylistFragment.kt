@@ -22,14 +22,11 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.widget.PopupMenu
-import androidx.core.app.DialogCompat
 import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.android.material.textfield.TextInputEditText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -69,6 +66,7 @@ class PluginPlaylistFragment : BaseFragment(null) {
             onPlayAll = { list, shuffle ->
                 PluginPlayback.playAll(mainActivity, pluginId(), list, currentTitle(), shuffle)
             },
+            onCreate = ::createPlaylist,
         )
         scaffold.list.adapter = rows
         scaffold.list.enableEdgeToEdgePaddingListener()
@@ -90,7 +88,7 @@ class PluginPlaylistFragment : BaseFragment(null) {
         val token = requireArguments().getInt(ARG_TOKEN, 0)
         val cached = if (token != 0) cache.groups(token) else null
         if (cached != null) {
-            shown = PluginPage.Groups(titleArg(), cached)
+            shown = PluginPage.Groups(titleArg(), cached, add = requireArguments().getBoolean(ARG_ADD))
             render(shown!!)
         }
         return scaffold.root
@@ -123,6 +121,7 @@ class PluginPlaylistFragment : BaseFragment(null) {
                 "",
                 row.title,
                 cache.putTracks(open.tracks),
+                add = pageAdd(),
             )
             is Open.Page -> openRemote(KIND_BROWSE, open.page, row.title) {
                 library.browse(pluginId(), open.page, row.title)
@@ -143,6 +142,7 @@ class PluginPlaylistFragment : BaseFragment(null) {
         popup.menu.findItem(R.id.add_to_queue).isVisible = row.menu.play
         popup.menu.findItem(R.id.rename).isVisible = row.menu.rename
         popup.menu.findItem(R.id.delete).isVisible = row.menu.delete
+        popup.menu.findItem(R.id.mygomusic_save).isVisible = row.menu.save
         popup.menu.findItem(R.id.mygomusic_unsave).isVisible = row.menu.unsave
         popup.setOnMenuItemClickListener { item ->
             when (item.itemId) {
@@ -168,9 +168,14 @@ class PluginPlaylistFragment : BaseFragment(null) {
                     confirmDelete(row)
                     true
                 }
+                R.id.mygomusic_save -> {
+                    val id = (row.open as? Open.Playlist)?.id ?: return@setOnMenuItemClickListener true
+                    mutate { library.save(pluginId(), id) }
+                    true
+                }
                 R.id.mygomusic_unsave -> {
                     val id = (row.open as? Open.Playlist)?.id ?: return@setOnMenuItemClickListener true
-                    mutate(row, id) { library.unsave(pluginId(), id) }
+                    mutate { library.unsave(pluginId(), id) }
                     true
                 }
                 else -> false
@@ -190,6 +195,9 @@ class PluginPlaylistFragment : BaseFragment(null) {
                         result.title.ifEmpty { title },
                         cache.putTracks(result.tracks),
                         page,
+                        add = result.add,
+                        remove = result.remove,
+                        move = result.move,
                     )
                     is PluginPage.Groups -> {
                         val token = cache.putGroups(result.groups)
@@ -199,6 +207,7 @@ class PluginPlaylistFragment : BaseFragment(null) {
                             putString(ARG_PAGE, page)
                             putString(ARG_TITLE, result.title ?: title)
                             putInt(ARG_TOKEN, token)
+                            putBoolean(ARG_ADD, result.add)
                         }
                     }
                     is PluginPage.Account -> if (view != null) showPluginAccountDialog(requireActivity(), pluginId(), result)
@@ -215,22 +224,50 @@ class PluginPlaylistFragment : BaseFragment(null) {
     }
 
     private fun onTrackMenu(track: PluginTrack, anchor: View) {
-        val popup = PopupMenu(requireContext(), anchor)
-        popup.inflate(R.menu.more_menu_less)
-        popup.setOnMenuItemClickListener { item ->
-            when (item.itemId) {
-                R.id.play_next -> {
-                    PluginPlayback.playNext(mainActivity, pluginId(), listOf(track))
-                    true
+        val page = shown as? PluginPage.Tracks
+        PopupMenu(requireContext(), anchor).showPluginTrackMenu(
+            add = page?.add == true,
+            remove = false,
+            onPlayNext = { PluginPlayback.playNext(mainActivity, pluginId(), listOf(track)) },
+            onQueue = { PluginPlayback.enqueue(mainActivity, pluginId(), listOf(track)) },
+            onAdd = { addTrack(track) },
+            onRemove = {},
+        )
+    }
+
+    private fun addTrack(track: PluginTrack) {
+        choosePluginPlaylist(
+            pluginId(),
+            library,
+            busy = { scaffold.refresh.isRefreshing = it },
+            onNew = {
+                createPluginPlaylist(pluginId(), library, track.id) { id ->
+                    if (id.isNotEmpty()) {
+                        Toast.makeText(requireContext(), R.string.mygomusic_added, Toast.LENGTH_SHORT).show()
+                    }
                 }
-                R.id.add_to_queue -> {
-                    PluginPlayback.enqueue(mainActivity, pluginId(), listOf(track))
-                    true
+            },
+        ) { id ->
+            viewLifecycleOwner.lifecycleScope.launch {
+                try {
+                    library.addTracks(pluginId(), id, listOf(track.id))
+                    if (view != null) {
+                        Toast.makeText(requireContext(), R.string.mygomusic_added, Toast.LENGTH_SHORT).show()
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    accountOrToast(e)
                 }
-                else -> false
             }
         }
-        popup.show()
+    }
+
+    private fun pageAdd(): Boolean {
+        val page = shown
+        if (page is PluginPage.Groups) return page.add
+        if (page is PluginPage.Tracks) return page.add
+        return arguments?.getBoolean(ARG_ADD) == true
     }
 
     private fun currentTitle(): String {
@@ -242,12 +279,20 @@ class PluginPlaylistFragment : BaseFragment(null) {
             scaffold.refresh.isRefreshing = true
             try {
                 when (val page = library.songs(pluginId(), open, title)) {
-                    is PluginPage.Tracks -> openDetail(
-                        kind,
-                        id,
-                        page.title.ifEmpty { title },
-                        cache.putTracks(page.tracks),
-                    )
+                    is PluginPage.Tracks -> {
+                        val playlist = open as? Open.Playlist
+                        openDetail(
+                            kind,
+                            id,
+                            page.title.ifEmpty { title },
+                            cache.putTracks(page.tracks),
+                            add = page.add,
+                            remove = page.remove,
+                            move = page.move,
+                            mine = playlist?.mine == true,
+                            fixed = playlist?.fixed == true,
+                        )
+                    }
                     is PluginPage.Account -> if (view != null) showPluginAccountDialog(requireActivity(), pluginId(), page)
                     is PluginPage.Message -> toast(page.text)
                     else -> toast(null)
@@ -262,7 +307,18 @@ class PluginPlaylistFragment : BaseFragment(null) {
         }
     }
 
-    private fun openDetail(kind: String, id: String, title: String, token: Int = 0, reload: String = "") {
+    private fun openDetail(
+        kind: String,
+        id: String,
+        title: String,
+        token: Int = 0,
+        reload: String = "",
+        add: Boolean = false,
+        remove: Boolean = false,
+        move: Boolean = false,
+        mine: Boolean = false,
+        fixed: Boolean = false,
+    ) {
         mainActivity.startFragment(PluginPlaylistDetailFragment()) {
             putString(PluginPlaylistDetailFragment.ARG_PLUGIN, pluginId())
             putString(PluginPlaylistDetailFragment.ARG_KIND, kind)
@@ -270,6 +326,11 @@ class PluginPlaylistFragment : BaseFragment(null) {
             putString(PluginPlaylistDetailFragment.ARG_TITLE, title)
             putInt(PluginPlaylistDetailFragment.ARG_TOKEN, token)
             putString(PluginPlaylistDetailFragment.ARG_RELOAD, reload)
+            putBoolean(PluginPlaylistDetailFragment.ARG_ADD, add)
+            putBoolean(PluginPlaylistDetailFragment.ARG_REMOVE, remove)
+            putBoolean(PluginPlaylistDetailFragment.ARG_MOVE, move)
+            putBoolean(PluginPlaylistDetailFragment.ARG_MINE, mine)
+            putBoolean(PluginPlaylistDetailFragment.ARG_FIXED, fixed)
         }
     }
 
@@ -315,18 +376,15 @@ class PluginPlaylistFragment : BaseFragment(null) {
 
     private fun rename(row: PluginRow) {
         val id = (row.open as? Open.Playlist)?.id ?: return
-        val dialog = MaterialAlertDialogBuilder(requireContext())
-            .setTitle(R.string.rename)
-            .setView(R.layout.dialog_new_playlist)
-            .setPositiveButton(android.R.string.ok) { which, _ ->
-                val input = DialogCompat.requireViewById(which as AlertDialog, R.id.editText) as TextInputEditText
-                val name = input.text?.toString()?.trim().orEmpty()
-                if (name.isEmpty()) return@setPositiveButton
-                mutate(row, id) { library.rename(pluginId(), id, name) }
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
-        (DialogCompat.requireViewById(dialog, R.id.editText) as TextInputEditText).setText(row.title)
+        pluginPlaylistNameDialog(R.string.rename, row.title) { name ->
+            mutate { library.rename(pluginId(), id, name) }
+        }
+    }
+
+    private fun createPlaylist() {
+        createPluginPlaylist(pluginId(), library) {
+            if (view != null) load(force = true)
+        }
     }
 
     private fun confirmDelete(row: PluginRow) {
@@ -335,14 +393,13 @@ class PluginPlaylistFragment : BaseFragment(null) {
             .setTitle(R.string.delete)
             .setMessage(getString(R.string.delete_really, row.title))
             .setPositiveButton(R.string.delete) { _, _ ->
-                mutate(row, id) { library.delete(pluginId(), id) }
+                mutate { library.delete(pluginId(), id) }
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
     }
 
-    private fun mutate(row: PluginRow, id: String = (row.open as? Open.Playlist)?.id.orEmpty(), block: suspend () -> Unit) {
-        if (id.isEmpty() && row.open !is Open.Playlist) return
+    private fun mutate(block: suspend () -> Unit) {
         viewLifecycleOwner.lifecycleScope.launch {
             try {
                 block()
@@ -437,12 +494,48 @@ class PluginPlaylistFragment : BaseFragment(null) {
         const val ARG_PAGE = "page"
         const val ARG_TITLE = "title"
         const val ARG_TOKEN = "token"
+        const val ARG_ADD = "add"
         const val KIND_ROOT = "root"
         const val KIND_BROWSE = "browse"
         const val KIND_ALBUMS = "albums"
         const val KIND_STATIONS = "stations"
         const val KIND_SHOWS = "shows"
     }
+}
+
+internal fun PopupMenu.showPluginTrackMenu(
+    add: Boolean,
+    remove: Boolean,
+    onPlayNext: () -> Unit,
+    onQueue: () -> Unit,
+    onAdd: () -> Unit,
+    onRemove: () -> Unit,
+) {
+    inflate(R.menu.more_menu_less)
+    menu.findItem(R.id.add_to_playlist).isVisible = add
+    menu.findItem(R.id.mygomusic_remove).isVisible = remove
+    setOnMenuItemClickListener { item ->
+        when (item.itemId) {
+            R.id.play_next -> {
+                onPlayNext()
+                true
+            }
+            R.id.add_to_queue -> {
+                onQueue()
+                true
+            }
+            R.id.add_to_playlist -> {
+                onAdd()
+                true
+            }
+            R.id.mygomusic_remove -> {
+                onRemove()
+                true
+            }
+            else -> false
+        }
+    }
+    show()
 }
 
 internal class PluginPageCache : ViewModel() {

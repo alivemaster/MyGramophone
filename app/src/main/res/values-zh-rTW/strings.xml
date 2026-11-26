@@ -589,6 +589,14 @@
     <string name="mygomusic_needs_sign_in">登入後才能查看。</string>
     <string name="mygomusic_needs_setup">這個外掛程式需要先進行設定。</string>
     <string name="mygomusic_unsave">取消收藏</string>
+    <string name="mygomusic_save">收藏</string>
+    <string name="mygomusic_add_to_playlist">添加到歌單</string>
+    <string name="mygomusic_remove_from_playlist">從歌單中移除</string>
+    <string name="mygomusic_new_playlist">新建歌單</string>
+    <string name="mygomusic_new_playlist_item">新建歌單…</string>
+    <string name="mygomusic_playlist_name">歌單名稱</string>
+    <string name="mygomusic_create">創建</string>
+    <string name="mygomusic_added">已添加到歌單</string>
     <string name="mygomusic_home">首頁</string>
     <string name="mygomusic_liked">我喜歡</string>
     <string name="mygomusic_saved_albums">收藏的專輯</string>

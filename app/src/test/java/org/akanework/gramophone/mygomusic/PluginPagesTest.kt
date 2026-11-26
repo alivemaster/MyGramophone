@@ -26,7 +26,7 @@ import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
 class PluginPagesTest {
-    private val caps = PluginCaps(rename = true, delete = true, unsave = true)
+    private val caps = PluginCaps(rename = true, delete = true, save = true)
 
     @Test
     fun trackSectionIsOneRowAndArtistsAreSkipped() {
@@ -47,13 +47,61 @@ class PluginPagesTest {
         )
         val groups = groupsFromPlaylists(lists, "Mine", "Saved", caps) { "$it" }
         assertEquals("Mine", groups[0].title)
+        assertEquals(true, groups[0].counted)
+        assertEquals(false, groups[0].create)
         assertEquals(false, groups[0].rows.single().menu.rename)
+        assertEquals(false, groups[0].rows.single().menu.save)
         assertEquals("Saved", groups[1].title)
+        assertEquals(false, groups[1].counted)
         assertEquals(true, groups[1].rows[0].menu.unsave)
+        assertEquals(false, groups[1].rows[0].menu.save)
         val hot = groups[1].rows[1]
         assertEquals("chart:1", (hot.open as Open.Playlist).id)
         assertEquals(false, hot.menu.rename)
         assertEquals(false, hot.menu.delete)
+        assertEquals(true, hot.menu.save)
+        assertEquals(false, hot.menu.unsave)
+    }
+
+    @Test
+    fun emptyMineStaysOnlyWhenCreating() {
+        val kept = groupsFromPlaylists(JSONArray("[]"), "Mine", "Saved", caps.copy(create = true)) { "$it" }
+        assertEquals(1, kept.size)
+        assertEquals(true, kept[0].counted)
+        assertEquals(true, kept[0].create)
+        assertTrue(kept[0].rows.isEmpty())
+        assertTrue(groupsFromPlaylists(JSONArray("[]"), "Mine", "Saved", caps) { "$it" }.isEmpty())
+    }
+
+    @Test
+    fun trackWritesFollowThePlaylistAndTheExports() {
+        val exports = setOf("addToPlaylist", "removeFromPlaylist", "movePlaylistTrack")
+        val own = trackPageFlags(playlist = true, mine = true, fixed = false, exports)
+        assertEquals(TrackWrites(add = true, remove = true, move = true), own)
+        val fixed = trackPageFlags(playlist = true, mine = true, fixed = true, exports)
+        assertEquals(true, fixed.add)
+        assertEquals(false, fixed.remove)
+        assertEquals(false, fixed.move)
+        val daily = trackPageFlags(playlist = false, mine = false, fixed = false, exports)
+        assertEquals(TrackWrites(add = true), daily)
+        val missing = trackPageFlags(playlist = true, mine = true, fixed = false, emptySet())
+        assertEquals(TrackWrites(), missing)
+    }
+
+    @Test
+    fun writablePlaylistsAreOwnAndUnfixed() {
+        val lists = JSONArray(
+            """[{"id":"a","name":"Plain"},{"id":"b","name":"Liked","mine":true,"fixed":true},{"id":"c","name":"Road","mine":true},{"id":"d","name":"Other","saved":true}]""",
+        )
+        assertEquals(listOf("c"), writablePlaylistChoices(lists).map { it.id })
+        assertTrue(writablePlaylistChoices(null).isEmpty())
+    }
+
+    @Test
+    fun moveKeepsTheDestinationIndexFromBeforeTheMove() {
+        assertEquals(listOf("b", "c", "a", "d"), moveItem(listOf("a", "b", "c", "d"), 0, 2))
+        assertEquals(listOf("a", "d", "b", "c"), moveItem(listOf("a", "b", "c", "d"), 3, 1))
+        assertEquals(listOf("a", "b"), moveItem(listOf("a", "b"), 0, 0))
     }
 
     @Test

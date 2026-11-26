@@ -585,6 +585,14 @@
     <string name="mygomusic_needs_sign_in">ログインすると表示できます。</string>
     <string name="mygomusic_needs_setup">このプラグインは、先に設定が必要です。</string>
     <string name="mygomusic_unsave">保存を解除</string>
+    <string name="mygomusic_save">保存</string>
+    <string name="mygomusic_add_to_playlist">プレイリストに追加</string>
+    <string name="mygomusic_remove_from_playlist">プレイリストから外す</string>
+    <string name="mygomusic_new_playlist">新しいプレイリスト</string>
+    <string name="mygomusic_new_playlist_item">新しいプレイリスト…</string>
+    <string name="mygomusic_playlist_name">プレイリスト名</string>
+    <string name="mygomusic_create">作成</string>
+    <string name="mygomusic_added">プレイリストに追加しました</string>
     <string name="mygomusic_home">ホーム</string>
     <string name="mygomusic_liked">お気に入り</string>
     <string name="mygomusic_saved_albums">保存したアルバム</string>

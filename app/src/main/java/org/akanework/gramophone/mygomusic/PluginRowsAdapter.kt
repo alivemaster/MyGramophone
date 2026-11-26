@@ -24,10 +24,12 @@ import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.appcompat.content.res.AppCompatResources
+import androidx.appcompat.widget.TooltipCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.RecyclerView
 import coil3.dispose
 import coil3.load
@@ -52,12 +54,16 @@ internal class PluginRowsAdapter(
     private val onTrack: (List<PluginTrack>, Int) -> Unit,
     private val onTrackMenu: (PluginTrack, View) -> Unit,
     private val onPlayAll: (List<PluginTrack>, Boolean) -> Unit,
+    private val onCreate: () -> Unit,
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
     private val context = fragment.requireContext()
     private var entries: List<Entry> = emptyList()
     private var tracks: List<PluginTrack> = emptyList()
     private var currentMediaItem: String? = null
     private var currentIsPlaying: Boolean? = null
+
+    /** Long-press reorders tracks. Only an own, unfixed playlist that exports `movePlaylistTrack`. */
+    var reorderEnabled: Boolean = false
 
     fun observePlayer() {
         val players: MediaControllerViewModel by fragment.activityViewModels()
@@ -96,15 +102,17 @@ internal class PluginRowsAdapter(
 
     fun submitGroups(groups: List<PluginGroup>) {
         tracks = emptyList()
+        reorderEnabled = false
         val rows = groups.sumOf { it.rows.size }
         entries = buildList {
             if (rows > 0) add(Entry.Decor(rows, false))
             for (group in groups) {
-                if (group.rows.isEmpty()) continue
+                if (group.rows.isEmpty() && !group.counted) continue
                 val only = group.rows.singleOrNull()
-                if (group.title.isNotEmpty() && (only == null || only.title != group.title)) {
+                if (group.title.isNotEmpty() && (group.counted || only == null || only.title != group.title)) {
                     add(Entry.Header(group.title))
                 }
+                if (group.counted) add(Entry.Decor(group.rows.size, false, group.create))
                 group.rows.forEach { add(Entry.Row(it)) }
             }
         }
@@ -123,6 +131,7 @@ internal class PluginRowsAdapter(
     fun clear() {
         entries = emptyList()
         tracks = emptyList()
+        reorderEnabled = false
         notifyDataSetChanged()
     }
 
@@ -139,6 +148,28 @@ internal class PluginRowsAdapter(
     fun fullSpan(position: Int): Boolean {
         val entry = entries.getOrNull(position) ?: return true
         return entry is Entry.Decor || entry is Entry.Header
+    }
+
+    /** Track index at this adapter position, or -1 for a header or count bar. */
+    fun trackIndex(position: Int): Int {
+        val entry = entries.getOrNull(position) as? Entry.Track ?: return -1
+        return entry.index
+    }
+
+    /** Moves one track. [from] and [to] are track indices in the list before this step. */
+    fun moveTrack(from: Int, to: Int) {
+        if (from == to || from !in tracks.indices || to !in tracks.indices) return
+        val fromPos = entries.indexOfFirst { it is Entry.Track && it.index == from }
+        val toPos = entries.indexOfFirst { it is Entry.Track && it.index == to }
+        if (fromPos < 0 || toPos < 0) return
+        tracks = moveItem(tracks, from, to)
+        val next = entries.toMutableList()
+        next.add(toPos, next.removeAt(fromPos))
+        var index = 0
+        entries = next.map { entry ->
+            if (entry is Entry.Track) Entry.Track(entry.track, index++) else entry
+        }
+        notifyItemMoved(fromPos, toPos)
     }
 
     /** Adapter position of the track that is current in the player, or -1. */
@@ -188,6 +219,8 @@ internal class PluginRowsAdapter(
         if (holder is DecorHolder) {
             holder.playAll.setOnClickListener(null)
             holder.shuffleAll.setOnClickListener(null)
+            holder.create.setOnClickListener(null)
+            holder.create.visibility = View.GONE
         }
         super.onViewRecycled(holder)
     }
@@ -197,13 +230,19 @@ internal class PluginRowsAdapter(
         holder.playAll.visibility = if (songs) View.VISIBLE else View.GONE
         holder.shuffleAll.visibility = if (songs) View.VISIBLE else View.GONE
         holder.sort.visibility = View.GONE
-        holder.create.visibility = View.GONE
+        holder.create.visibility = if (decor.create) View.VISIBLE else View.GONE
+        if (decor.create) {
+            val label = context.getString(R.string.mygomusic_new_playlist)
+            holder.create.contentDescription = label
+            TooltipCompat.setTooltipText(holder.create, label)
+        }
         holder.jumpUp.visibility = View.GONE
         holder.jumpDown.visibility = View.GONE
         val plural = if (decor.tracks) R.plurals.songs else R.plurals.items
         holder.counter.text = context.resources.getQuantityString(plural, decor.count, decor.count)
         holder.playAll.setOnClickListener { onPlayAll(tracks, false) }
         holder.shuffleAll.setOnClickListener { onPlayAll(tracks, true) }
+        holder.create.setOnClickListener(if (decor.create) { _ -> onCreate() } else null)
     }
 
     private fun bindRow(holder: RowHolder, row: PluginRow) {
@@ -232,13 +271,23 @@ internal class PluginRowsAdapter(
         holder.more.visibility = View.VISIBLE
         // A track the source cannot play still takes the click, so the ripple stays.
         holder.itemView.setOnClickListener {
-            if (!track.unavailable) onTrack(tracks, entry.index)
+            val current = currentTrack(holder) ?: return@setOnClickListener
+            if (!current.unavailable) onTrack(tracks, trackIndex(holder.bindingAdapterPosition))
         }
-        holder.itemView.setOnLongClickListener {
-            onTrackMenu(track, it)
-            true
+        if (reorderEnabled) {
+            // The drag helper takes the long press. The more button still opens the menu.
+            holder.itemView.setOnLongClickListener(null)
+        } else {
+            holder.itemView.setOnLongClickListener {
+                val current = currentTrack(holder) ?: return@setOnLongClickListener false
+                onTrackMenu(current, it)
+                true
+            }
         }
-        holder.more.setOnClickListener { onTrackMenu(track, it) }
+        holder.more.setOnClickListener {
+            val current = currentTrack(holder) ?: return@setOnClickListener
+            onTrackMenu(current, it)
+        }
         val playing = currentMediaItem != null &&
             currentMediaItem == pluginMediaId(pluginId, track.id)
         if (!playing) {
@@ -287,13 +336,17 @@ internal class PluginRowsAdapter(
         }
     }
 
+    private fun currentTrack(holder: RowHolder): PluginTrack? {
+        return tracks.getOrNull(trackIndex(holder.bindingAdapterPosition))
+    }
+
     private fun notifyPlaying() {
         if (tracks.isEmpty()) return
         notifyDataSetChanged()
     }
 
     private sealed interface Entry {
-        data class Decor(val count: Int, val tracks: Boolean) : Entry
+        data class Decor(val count: Int, val tracks: Boolean, val create: Boolean = false) : Entry
         data class Header(val title: String) : Entry
         data class Row(val row: PluginRow) : Entry
         data class Track(val track: PluginTrack, val index: Int) : Entry
@@ -319,5 +372,70 @@ internal class PluginRowsAdapter(
         val artist: TextView = view.findViewById(R.id.artist)
         val nowPlaying: ImageView = view.findViewById(R.id.now_playing)
         val more: MaterialButton = view.findViewById(R.id.more)
+    }
+}
+
+/**
+ * Drag on a track page. [from] and [to] reported on drop are the indices before the gesture,
+ * with [to] the index the track occupies afterwards.
+ */
+internal class PluginTrackMoveCallback(
+    private val rows: PluginRowsAdapter,
+    private val onMoved: (from: Int, to: Int) -> Unit,
+) : ItemTouchHelper.SimpleCallback(
+    ItemTouchHelper.UP or ItemTouchHelper.DOWN or ItemTouchHelper.LEFT or ItemTouchHelper.RIGHT,
+    0,
+) {
+    private var dragFrom = -1
+    private var dragTo = -1
+
+    override fun isLongPressDragEnabled(): Boolean = rows.reorderEnabled
+
+    override fun onSelectedChanged(viewHolder: RecyclerView.ViewHolder?, actionState: Int) {
+        if (actionState == ItemTouchHelper.ACTION_STATE_DRAG && viewHolder != null) {
+            dragFrom = rows.trackIndex(viewHolder.bindingAdapterPosition)
+            dragTo = dragFrom
+        }
+        super.onSelectedChanged(viewHolder, actionState)
+    }
+
+    override fun getMovementFlags(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder): Int {
+        if (!rows.reorderEnabled || rows.trackIndex(viewHolder.bindingAdapterPosition) < 0) {
+            return makeMovementFlags(0, 0)
+        }
+        return makeMovementFlags(
+            ItemTouchHelper.UP or ItemTouchHelper.DOWN or ItemTouchHelper.LEFT or ItemTouchHelper.RIGHT,
+            0,
+        )
+    }
+
+    override fun canDropOver(
+        recyclerView: RecyclerView,
+        current: RecyclerView.ViewHolder,
+        target: RecyclerView.ViewHolder,
+    ): Boolean = rows.trackIndex(target.bindingAdapterPosition) >= 0
+
+    override fun onMove(
+        recyclerView: RecyclerView,
+        viewHolder: RecyclerView.ViewHolder,
+        target: RecyclerView.ViewHolder,
+    ): Boolean {
+        val from = rows.trackIndex(viewHolder.bindingAdapterPosition)
+        val to = rows.trackIndex(target.bindingAdapterPosition)
+        if (from < 0 || to < 0 || from == to) return false
+        rows.moveTrack(from, to)
+        dragTo = to
+        return true
+    }
+
+    override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) = Unit
+
+    override fun clearView(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder) {
+        super.clearView(recyclerView, viewHolder)
+        val from = dragFrom
+        val to = dragTo
+        dragFrom = -1
+        dragTo = -1
+        if (from >= 0 && to >= 0 && from != to) onMoved(from, to)
     }
 }

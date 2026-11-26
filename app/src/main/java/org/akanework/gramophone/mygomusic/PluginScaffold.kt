@@ -26,17 +26,22 @@ import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.widget.FrameLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.core.os.ConfigurationCompat
 import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.google.android.material.appbar.AppBarLayout
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 import com.google.android.material.appbar.CollapsingToolbarLayout
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
@@ -190,6 +195,111 @@ internal fun pluginTextDialog(
     }
     dialog.show()
     return dialog
+}
+
+/** Sign-in and setup open the plugin settings. Anything else is the plugin's message. */
+internal fun reportPluginCall(fragment: Fragment, pluginId: String, error: Exception) {
+    val call = error as? PluginCallException
+    if (call != null && (call.code == "signIn" || call.code == "setup")) {
+        if (fragment.view != null) {
+            showPluginAccountDialog(
+                fragment.requireActivity(),
+                pluginId,
+                PluginPage.Account(call.code, call.message?.trim().orEmpty()),
+            )
+        }
+        return
+    }
+    val text = error.message?.ifBlank { null } ?: fragment.getString(R.string.mygomusic_plugin_failed)
+    Toast.makeText(fragment.requireContext(), text, Toast.LENGTH_LONG).show()
+}
+
+/**
+ * Name field from the local playlist dialog. The hint stays on the plugin wording.
+ */
+internal fun Fragment.pluginPlaylistNameDialog(
+    title: Int,
+    initial: String,
+    positive: Int = android.R.string.ok,
+    onOk: (String) -> Unit,
+) {
+    pluginTextDialog(
+        requireContext(),
+        title = getString(title),
+        hint = getString(R.string.mygomusic_playlist_name),
+        initial = initial,
+        positive = positive,
+    ) { dialog, field, _ ->
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val name = field.text?.toString()?.trim().orEmpty()
+            if (name.isEmpty()) return@setOnClickListener
+            dialog.dismiss()
+            onOk(name)
+        }
+    }
+}
+
+/**
+ * Asks for a name, creates the playlist, and adds [trackId] when the plugin returned an id.
+ */
+internal fun Fragment.createPluginPlaylist(
+    pluginId: String,
+    library: PluginLibrary,
+    trackId: String? = null,
+    onDone: (String) -> Unit,
+) {
+    pluginPlaylistNameDialog(R.string.mygomusic_new_playlist, "", R.string.mygomusic_create) { name ->
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                val id = library.create(pluginId, name)
+                if (!trackId.isNullOrEmpty() && id.isNotEmpty()) {
+                    library.addTracks(pluginId, id, listOf(trackId))
+                }
+                if (view != null) onDone(id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (view != null) reportPluginCall(this@createPluginPlaylist, pluginId, e)
+            }
+        }
+    }
+}
+
+/**
+ * Same list dialog as adding a song to a local playlist: title, playlist icon, names, and cancel.
+ * The last row creates a playlist, and only when the plugin exports `createPlaylist`, same as the plus.
+ */
+internal fun Fragment.choosePluginPlaylist(
+    pluginId: String,
+    library: PluginLibrary,
+    busy: (Boolean) -> Unit,
+    onNew: () -> Unit,
+    onId: (String) -> Unit,
+) {
+    viewLifecycleOwner.lifecycleScope.launch {
+        busy(true)
+        try {
+            val picker = library.writablePlaylists(pluginId)
+            if (view == null) return@launch
+            val items = picker.choices.map { it.name }.toMutableList()
+            if (picker.create) items += getString(R.string.mygomusic_new_playlist_item)
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.mygomusic_add_to_playlist)
+                .setIcon(R.drawable.ic_playlist_play)
+                .setItems(items.toTypedArray()) { _, which ->
+                    if (picker.create && which == picker.choices.size) onNew()
+                    else picker.choices.getOrNull(which)?.let { onId(it.id) }
+                }
+                .setNegativeButton(android.R.string.cancel) { _, _ -> }
+                .show()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            if (view != null) reportPluginCall(this@choosePluginPlaylist, pluginId, e)
+        } finally {
+            if (view != null) busy(false)
+        }
+    }
 }
 
 private var accountDialog: AlertDialog? = null

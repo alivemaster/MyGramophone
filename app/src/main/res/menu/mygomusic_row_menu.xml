@@ -32,6 +32,9 @@
         android:id="@+id/delete"
         android:title="@string/delete" />
     <item
+        android:id="@+id/mygomusic_save"
+        android:title="@string/mygomusic_save" />
+    <item
         android:id="@+id/mygomusic_unsave"
         android:title="@string/mygomusic_unsave" />
 </menu>
