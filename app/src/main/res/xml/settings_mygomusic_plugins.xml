@@ -18,15 +18,22 @@
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
-    <DropDownPreference
-        android:defaultValue="high"
-        android:entries="@array/mygomusic_quality"
-        android:entryValues="@array/mygomusic_quality_val"
-        android:key="mygomusic_quality"
-        android:layout="@layout/preference_dropdown_md"
-        android:title="@string/mygomusic_quality"
-        app:iconSpaceReserved="false"
-        app:useSimpleSummaryProvider="true" />
+    <PreferenceCategory
+        android:key="mygomusic_playback"
+        android:layout="@layout/preference_category_md"
+        android:title="@string/mygomusic_playback">
+
+        <DropDownPreference
+            android:defaultValue="high"
+            android:entries="@array/mygomusic_quality"
+            android:entryValues="@array/mygomusic_quality_val"
+            android:key="mygomusic_quality"
+            android:layout="@layout/preference_dropdown_md"
+            android:title="@string/mygomusic_quality"
+            app:iconSpaceReserved="false"
+            app:useSimpleSummaryProvider="true" />
+
+    </PreferenceCategory>
 
     <PreferenceCategory
         android:key="mygomusic_plugin_list"

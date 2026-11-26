@@ -302,10 +302,12 @@
     <string name="mygomusic_plugin_permission_process">This app will not run these programs</string>
     <!-- Process permission when the plugin asks to run any program -->
     <string name="mygomusic_plugin_permission_process_any">This app will not run any programs</string>
-    <!-- Confirmation before deleting an installed plugin. Title -->
-    <string name="mygomusic_plugin_delete_title">Remove this plugin?</string>
-    <!-- Confirmation before deleting an installed plugin. %1$s is the plugin name -->
-    <string name="mygomusic_plugin_delete_message">%1$s will be removed.</string>
+    <!-- Overflow item that asks before an installed plugin is removed -->
+    <string name="mygomusic_plugin_remove">Remove…</string>
+    <!-- Confirmation before removing an installed plugin. Title -->
+    <string name="mygomusic_plugin_remove_title">Remove this plugin?</string>
+    <!-- Confirmation before removing an installed plugin. %1$s is the plugin name -->
+    <string name="mygomusic_plugin_remove_message">%1$s will be removed.</string>
     <!-- Checkbox on the delete confirmation. Unchecked keeps the plugin's saved settings. -->
     <string name="mygomusic_plugin_delete_data">Also delete plugin settings</string>
     <!-- Overflow item. Shown only when the plugin was installed from GitHub. -->
@@ -369,6 +371,8 @@
     <string name="mygomusic_stations">Radio</string>
     <string name="mygomusic_shows">Podcasts</string>
     <string name="mygomusic_plugin_failed">The plugin could not load this list.</string>
+    <!-- Category on the plugin list for how plugin audio is requested -->
+    <string name="mygomusic_playback">Playback</string>
     <string name="mygomusic_quality">Audio quality</string>
     <string name="mygomusic_quality_standard">Standard</string>
     <string name="mygomusic_quality_high">High</string>

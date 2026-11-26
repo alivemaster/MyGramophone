@@ -18,7 +18,6 @@
 package org.akanework.gramophone.mygomusic
 
 import android.os.Bundle
-import android.text.InputType
 import android.view.View
 import android.widget.CheckBox
 import android.widget.ImageView
@@ -28,7 +27,6 @@ import androidx.core.os.ConfigurationCompat
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.fragment.app.viewModels
 import androidx.preference.DropDownPreference
-import androidx.preference.EditTextPreference
 import androidx.preference.ListPreference
 import androidx.preference.Preference
 import androidx.preference.SwitchPreferenceCompat
@@ -67,6 +65,7 @@ class PluginSettingsFragment : BasePreferenceFragment() {
     private var progressDialog: AlertDialog? = null
     private var ioDialog: AlertDialog? = null
     private var saveDialog: AlertDialog? = null
+    private var textDialog: AlertDialog? = null
     private var deleteDialog: AlertDialog? = null
     private var promptDialog: AlertDialog? = null
     private var promptImage: ImageView? = null
@@ -97,6 +96,9 @@ class PluginSettingsFragment : BasePreferenceFragment() {
         ioDialog = null
         saveDialog?.dismiss()
         saveDialog = null
+        textDialog?.setOnDismissListener(null)
+        textDialog?.dismiss()
+        textDialog = null
         deleteDialog?.dismiss()
         deleteDialog = null
         dismissPrompt()
@@ -279,25 +281,48 @@ class PluginSettingsFragment : BasePreferenceFragment() {
         }
     }
 
-    private fun textField(setting: PluginSetting, stored: String, password: Boolean): EditTextPreference {
-        return EditTextPreference(requireContext()).apply {
+    private fun textField(setting: PluginSetting, stored: String, password: Boolean): Preference {
+        return Preference(requireContext()).apply {
             layoutResource = R.layout.preference_basic
-            dialogTitle = setting.label
-            if (password) {
-                setOnBindEditTextListener { edit ->
-                    edit.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-                    edit.setSingleLine(true)
-                }
-            } else {
-                summaryProvider = EditTextPreference.SimpleSummaryProvider.getInstance()
-            }
-            text = stored
-            setOnPreferenceChangeListener { _, newValue ->
-                val next = newValue as? String ?: return@setOnPreferenceChangeListener false
-                onValue(setting.key, next)
+            if (!password) summary = textSummary(stored)
+            setOnPreferenceClickListener {
+                openText(setting, password)
                 true
             }
         }
+    }
+
+    private fun openText(setting: PluginSetting, password: Boolean) {
+        if (textDialog?.isShowing == true) return
+        val dialog = pluginTextDialog(
+            context = requireContext(),
+            title = setting.label,
+            hint = setting.label,
+            initial = current[setting.key].orEmpty(),
+            password = password,
+        ) { shown, field, _ ->
+            shown.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val next = field.text?.toString().orEmpty()
+                shown.dismiss()
+                onValue(setting.key, next)
+            }
+        }
+        dialog.setOnDismissListener {
+            if (textDialog === dialog) textDialog = null
+        }
+        textDialog = dialog
+    }
+
+    private fun reflectText(key: String, value: String) {
+        val row = controls[key] ?: return
+        if (row is SwitchPreferenceCompat || row is DropDownPreference) return
+        val setting = specs.firstOrNull { it.key == key } ?: return
+        if (pluginSettingKind(setting, value) == PluginSettingKind.Password) return
+        row.summary = textSummary(value)
+    }
+
+    private fun textSummary(value: String): CharSequence {
+        return value.ifEmpty { getString(androidx.preference.R.string.not_set) }
     }
 
     private fun bindSelect(preference: DropDownPreference, setting: PluginSetting, stored: String) {
@@ -340,6 +365,7 @@ class PluginSettingsFragment : BasePreferenceFragment() {
         val previous = current[key].orEmpty()
         if (next == previous) return
         current[key] = next
+        reflectText(key, next)
         model.save(key, next, previous)
     }
 
@@ -356,11 +382,11 @@ class PluginSettingsFragment : BasePreferenceFragment() {
     private fun applyControl(key: String, value: String) {
         when (val pref = controls[key]) {
             is SwitchPreferenceCompat -> pref.isChecked = value == "true"
-            is EditTextPreference -> pref.text = value
             is DropDownPreference -> {
                 val setting = specs.firstOrNull { it.key == key } ?: return
                 bindSelect(pref, setting, value)
             }
+            else -> reflectText(key, value)
         }
     }
 
@@ -545,12 +571,12 @@ class PluginSettingsFragment : BasePreferenceFragment() {
             ?: requireActivity().intent.getStringExtra(PluginSettingsActivity.EXTRA_TITLE).orEmpty()
         val form = layoutInflater.inflate(R.layout.mygomusic_plugin_delete_data, null)
         form.findViewById<TextView>(R.id.mygomusic_plugin_delete_message).text =
-            getString(R.string.mygomusic_plugin_delete_message, title)
+            getString(R.string.mygomusic_plugin_remove_message, title)
         val check = form.findViewById<CheckBox>(R.id.mygomusic_plugin_delete_data)
         deleteDialog = MaterialAlertDialogBuilder(requireContext())
-            .setTitle(R.string.mygomusic_plugin_delete_title)
+            .setTitle(R.string.mygomusic_plugin_remove_title)
             .setView(form)
-            .setPositiveButton(R.string.delete) { _, _ -> model.delete(check.isChecked) }
+            .setPositiveButton(R.string.remove) { _, _ -> model.delete(check.isChecked) }
             .setNegativeButton(android.R.string.cancel, null)
             .setOnDismissListener {
                 if (deleteDialog?.isShowing != true) deleteDialog = null

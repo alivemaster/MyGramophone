@@ -135,8 +135,9 @@
     <string name="mygomusic_plugin_reach_any">可访问任意主机</string>
     <string name="mygomusic_plugin_permission_process">本应用不会执行这些程序</string>
     <string name="mygomusic_plugin_permission_process_any">本应用不会执行任何程序</string>
-    <string name="mygomusic_plugin_delete_title">删除这个插件？</string>
-    <string name="mygomusic_plugin_delete_message">将删除%1$s。</string>
+    <string name="mygomusic_plugin_remove">移除…</string>
+    <string name="mygomusic_plugin_remove_title">移除这个插件？</string>
+    <string name="mygomusic_plugin_remove_message">将移除%1$s。</string>
     <string name="mygomusic_plugin_delete_data">同时删除插件设置</string>
     <string name="mygomusic_plugin_check_update">检查更新</string>
     <string name="mygomusic_plugin_up_to_date">已是最新版本</string>
@@ -180,6 +181,7 @@
     <string name="mygomusic_stations">电台</string>
     <string name="mygomusic_shows">播客</string>
     <string name="mygomusic_plugin_failed">插件没能列出这些内容。</string>
+    <string name="mygomusic_playback">播放</string>
     <string name="mygomusic_quality">音质</string>
     <string name="mygomusic_quality_standard">标准</string>
     <string name="mygomusic_quality_high">高</string>

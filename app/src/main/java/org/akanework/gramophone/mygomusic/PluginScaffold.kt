@@ -17,15 +17,21 @@
 
 package org.akanework.gramophone.mygomusic
 
+import android.content.Context
 import android.content.Intent
+import android.text.InputType
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.inputmethod.EditorInfo
 import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.core.os.ConfigurationCompat
 import androidx.coordinatorlayout.widget.CoordinatorLayout
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
@@ -36,6 +42,8 @@ import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textfield.TextInputLayout
 import org.akanework.gramophone.R
 import org.akanework.gramophone.logic.allowDiskAccessInStrictMode
 import org.akanework.gramophone.logic.ui.MyRecyclerView
@@ -122,6 +130,66 @@ private fun tint(refresh: SwipeRefreshLayout) {
     refresh.setColorSchemeColors(
         MaterialColors.getColor(refresh, androidx.appcompat.R.attr.colorPrimary),
     )
+}
+
+/**
+ * Text field from the playlist name dialog. The title, buttons and keyboard follow that dialog.
+ * [onBind] runs once the dialog is showing, so it can replace the positive button's click listener.
+ * Until then, that button only closes the dialog.
+ */
+internal fun pluginTextDialog(
+    context: Context,
+    title: CharSequence,
+    hint: CharSequence,
+    initial: String,
+    password: Boolean = false,
+    positive: Int = android.R.string.ok,
+    message: CharSequence? = null,
+    onBind: (AlertDialog, TextInputEditText, TextInputLayout) -> Unit = { _, _, _ -> },
+): AlertDialog {
+    val form = LayoutInflater.from(context).inflate(R.layout.dialog_new_playlist, null)
+    val field = form.findViewById<TextInputEditText>(R.id.editText)
+    val box = form.findViewById<TextInputLayout>(R.id.inputLayout)
+    if (password) {
+        field.setSingleLine(true)
+        field.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+    }
+    box.hint = hint
+    field.setText(initial)
+    field.setSelection(field.text?.length ?: 0)
+    field.imeOptions = EditorInfo.IME_ACTION_DONE
+    val builder = MaterialAlertDialogBuilder(context)
+        .setTitle(title)
+        .setView(form)
+        .setPositiveButton(positive, null)
+        .setNegativeButton(android.R.string.cancel, null)
+    if (!message.isNullOrEmpty()) builder.setMessage(message)
+    val dialog = builder.create()
+    field.setOnEditorActionListener { _, actionId, _ ->
+        if (actionId != EditorInfo.IME_ACTION_DONE) return@setOnEditorActionListener false
+        val button = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+        if (button.isEnabled) button.performClick()
+        true
+    }
+    dialog.setOnShowListener {
+        val window = dialog.window
+        if (window != null) {
+            // Same fix as the playlist name dialog: a short screen will not take input without it.
+            window.decorView.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+            window.setLayout(ViewGroup.LayoutParams.WRAP_CONTENT, window.decorView.measuredHeight)
+            field.requestFocus()
+            field.post {
+                if (ViewCompat.getRootWindowInsets(window.decorView)
+                        ?.isVisible(WindowInsetsCompat.Type.ime()) != true
+                ) {
+                    WindowInsetsControllerCompat(window, field).show(WindowInsetsCompat.Type.ime())
+                }
+            }
+        }
+        onBind(dialog, field, box)
+    }
+    dialog.show()
+    return dialog
 }
 
 private var accountDialog: AlertDialog? = null

@@ -23,7 +23,6 @@ import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
-import android.view.inputmethod.EditorInfo
 import android.widget.CompoundButton
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -38,8 +37,6 @@ import androidx.preference.PreferenceCategory
 import androidx.preference.PreferenceViewHolder
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.floatingactionbutton.FloatingActionButton
-import com.google.android.material.textfield.TextInputEditText
-import com.google.android.material.textfield.TextInputLayout
 import org.akanework.gramophone.R
 import org.akanework.gramophone.logic.allowDiskAccessInStrictMode
 import org.akanework.gramophone.logic.dpToPx
@@ -230,40 +227,34 @@ class PluginListFragment : BasePreferenceFragment() {
     }
 
     private fun askGithub() {
-        if (model.ui.value?.busy == true) return
-        val form = layoutInflater.inflate(R.layout.mygomusic_plugin_github, null)
-        val field = form.findViewById<TextInputEditText>(R.id.editText)
-        val box = form.findViewById<TextInputLayout>(R.id.inputLayout)
-        val dialog = MaterialAlertDialogBuilder(requireContext())
-            .setTitle(R.string.mygomusic_plugin_github_title)
-            .setMessage(R.string.mygomusic_plugin_github_hint)
-            .setView(form)
-            .setPositiveButton(R.string.mygomusic_plugin_install, null)
-            .setNegativeButton(android.R.string.cancel, null)
-            .create()
-        dialog.setOnShowListener {
-            val button = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+        if (model.ui.value?.busy == true || githubDialog?.isShowing == true) return
+        val dialog = pluginTextDialog(
+            context = requireContext(),
+            title = getString(R.string.mygomusic_plugin_github_title),
+            hint = getString(R.string.mygomusic_plugin_github_placeholder),
+            initial = "",
+            positive = R.string.mygomusic_plugin_install,
+            message = getString(R.string.mygomusic_plugin_github_hint),
+        ) { shown, field, box ->
+            val button = shown.getButton(AlertDialog.BUTTON_POSITIVE)
             button.isEnabled = false
             field.addTextChangedListener(afterTextChanged = {
                 box.error = null
                 button.isEnabled = !it.isNullOrBlank()
             })
-            val submit = {
+            button.setOnClickListener {
                 try {
                     val repo = parsePluginRepo(field.text?.toString().orEmpty())
-                    dialog.dismiss()
+                    shown.dismiss()
                     model.stageGithub(repo)
                 } catch (e: PluginPackageException) {
                     box.error = pluginFailureMessage(requireContext(), e)
-                }
-            }
-            button.setOnClickListener { submit() }
-            field.setOnEditorActionListener { _, actionId, _ ->
-                if (actionId == EditorInfo.IME_ACTION_DONE && button.isEnabled) {
-                    submit()
-                    true
-                } else {
-                    false
+                    val window = shown.window ?: return@setOnClickListener
+                    window.decorView.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+                    window.setLayout(
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        window.decorView.measuredHeight,
+                    )
                 }
             }
         }
@@ -271,7 +262,6 @@ class PluginListFragment : BasePreferenceFragment() {
             if (githubDialog === dialog) githubDialog = null
         }
         githubDialog = dialog
-        dialog.show()
     }
 
     private companion object {

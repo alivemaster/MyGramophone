@@ -24,6 +24,6 @@
         app:showAsAction="never" />
     <item
         android:id="@+id/mygomusic_plugin_delete"
-        android:title="@string/delete"
+        android:title="@string/mygomusic_plugin_remove"
         app:showAsAction="never" />
 </menu>
