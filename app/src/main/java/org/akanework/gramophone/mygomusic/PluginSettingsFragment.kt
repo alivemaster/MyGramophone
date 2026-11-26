@@ -72,6 +72,10 @@ class PluginSettingsFragment : BasePreferenceFragment() {
     private var promptImage: ImageView? = null
     private var promptLabel: TextView? = null
     private var signInDialog: AlertDialog? = null
+    private var noticeDialog: AlertDialog? = null
+    private var updateErrorDialog: AlertDialog? = null
+    private var updateDialog: AlertDialog? = null
+    private var shownGeneration = -1
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         preferenceScreen = preferenceManager.createPreferenceScreen(requireContext())
@@ -97,6 +101,15 @@ class PluginSettingsFragment : BasePreferenceFragment() {
         deleteDialog = null
         dismissPrompt()
         dismissSignInMessage()
+        noticeDialog?.setOnCancelListener(null)
+        noticeDialog?.dismiss()
+        noticeDialog = null
+        updateErrorDialog?.setOnCancelListener(null)
+        updateErrorDialog?.dismiss()
+        updateErrorDialog = null
+        updateDialog?.setOnCancelListener(null)
+        updateDialog?.dismiss()
+        updateDialog = null
         activity?.findViewById<MaterialToolbar>(R.id.topAppBar)?.let { bar ->
             bar.setOnMenuItemClickListener(null)
             bar.menu.clear()
@@ -112,10 +125,17 @@ class PluginSettingsFragment : BasePreferenceFragment() {
             }
             return
         }
-        if (ui.ready && !built) {
+        if (ui.ready && ui.generation != shownGeneration) {
+            shownGeneration = ui.generation
             built = true
             build(ui)
+            if (ui.title.isNotEmpty()) {
+                activity?.findViewById<com.google.android.material.appbar.CollapsingToolbarLayout>(
+                    R.id.collapsingtoolbar,
+                )?.title = ui.title
+            }
         }
+        syncUpdateItem(ui.fromGithub)
         controls.values.forEach { it.isEnabled = !ui.saving && !ui.signingIn && ui.saveFailure == null }
         if (ui.busy) {
             if (progressDialog?.isShowing != true) {
@@ -135,6 +155,9 @@ class PluginSettingsFragment : BasePreferenceFragment() {
         val save = ui.saveFailure
         if (save == null) dismissSave() else showSaveFailure(save)
         syncAccount(ui)
+        syncNotice(ui.notice)
+        syncUpdateError(ui.updateError)
+        syncUpdateOffer(ui)
     }
 
     private fun build(ui: PluginSettingsUi) {
@@ -452,10 +475,68 @@ class PluginSettingsFragment : BasePreferenceFragment() {
         bar.menu.clear()
         bar.overflowIcon = AppCompatResources.getDrawable(requireContext(), R.drawable.ic_more_vert_alt_topappbar)
         bar.inflateMenu(R.menu.mygomusic_plugin_item)
+        bar.menu.findItem(R.id.mygomusic_plugin_check_update)?.isVisible = false
         bar.setOnMenuItemClickListener { item ->
-            if (item.itemId == R.id.mygomusic_plugin_delete && model.ui.value?.signingIn != true) confirmDelete()
+            if (model.ui.value?.signingIn == true) return@setOnMenuItemClickListener true
+            when (item.itemId) {
+                R.id.mygomusic_plugin_check_update -> model.checkUpdate()
+                R.id.mygomusic_plugin_delete -> confirmDelete()
+            }
             true
         }
+    }
+
+    private fun syncUpdateItem(fromGithub: Boolean) {
+        val bar = activity?.findViewById<MaterialToolbar>(R.id.topAppBar) ?: return
+        bar.menu.findItem(R.id.mygomusic_plugin_check_update)?.isVisible = fromGithub
+    }
+
+    private fun syncNotice(notice: String?) {
+        if (notice == null) {
+            noticeDialog?.setOnCancelListener(null)
+            noticeDialog?.dismiss()
+            noticeDialog = null
+            return
+        }
+        if (noticeDialog?.isShowing == true) return
+        noticeDialog = MaterialAlertDialogBuilder(requireContext())
+            .setMessage(notice)
+            .setPositiveButton(android.R.string.ok) { _, _ -> model.clearNotice() }
+            .setOnCancelListener { model.clearNotice() }
+            .show()
+    }
+
+    private fun syncUpdateError(error: PluginPackageException?) {
+        if (error == null) {
+            updateErrorDialog?.setOnCancelListener(null)
+            updateErrorDialog?.dismiss()
+            updateErrorDialog = null
+            return
+        }
+        if (updateErrorDialog?.isShowing == true) return
+        updateErrorDialog = MaterialAlertDialogBuilder(requireContext())
+            .setMessage(pluginFailureMessage(requireContext(), error))
+            .setPositiveButton(android.R.string.ok) { _, _ -> model.clearUpdateError() }
+            .setOnCancelListener { model.clearUpdateError() }
+            .show()
+    }
+
+    private fun syncUpdateOffer(ui: PluginSettingsUi) {
+        val manifest = ui.updateOffer
+        if (manifest == null) {
+            updateDialog?.setOnCancelListener(null)
+            updateDialog?.dismiss()
+            updateDialog = null
+            return
+        }
+        if (updateDialog?.isShowing == true) return
+        updateDialog = MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.mygomusic_plugin_update_title)
+            .setMessage(pluginInstallMessage(requireContext(), manifest, ui.updateRepo))
+            .setPositiveButton(R.string.mygomusic_plugin_update) { _, _ -> model.confirmUpdate() }
+            .setNegativeButton(android.R.string.cancel) { _, _ -> model.discardUpdate() }
+            .setOnCancelListener { model.discardUpdate() }
+            .show()
     }
 
     private fun confirmDelete() {

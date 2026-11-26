@@ -17,6 +17,7 @@
 
 package org.akanework.gramophone.mygomusic
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -153,7 +154,7 @@ class PluginListFragment : BasePreferenceFragment() {
         } else if (confirmDialog?.isShowing != true) {
             confirmDialog = MaterialAlertDialogBuilder(requireContext())
                 .setTitle(R.string.mygomusic_plugin_install_title)
-                .setMessage(confirmText(manifest, ui.confirmRepo))
+                .setMessage(pluginInstallMessage(requireContext(), manifest, ui.confirmRepo))
                 .setPositiveButton(R.string.mygomusic_plugin_install) { _, _ -> model.confirmInstall() }
                 .setNegativeButton(android.R.string.cancel) { _, _ -> model.discardPending() }
                 .setOnCancelListener { model.discardPending() }
@@ -166,7 +167,7 @@ class PluginListFragment : BasePreferenceFragment() {
             failureDialog = null
         } else if (failureDialog?.isShowing != true) {
             failureDialog = MaterialAlertDialogBuilder(requireContext())
-                .setMessage(failureMessage(failure))
+                .setMessage(pluginFailureMessage(requireContext(), failure))
                 .setPositiveButton(android.R.string.ok) { _, _ -> model.clearFailure() }
                 .setOnCancelListener { model.clearFailure() }
                 .show()
@@ -208,64 +209,6 @@ class PluginListFragment : BasePreferenceFragment() {
                 }
             })
         }
-    }
-
-    private fun confirmText(manifest: PluginManifest, repo: String): String = buildString {
-        append(manifest.title(locale()))
-        if (manifest.version.isNotEmpty()) {
-            append('\n')
-            append(getString(R.string.mygomusic_plugin_install_version, manifest.version))
-        }
-        if (repo.isNotEmpty()) {
-            append('\n')
-            append(getString(R.string.mygomusic_plugin_install_from, repo))
-        }
-        append("\n\n")
-        when {
-            manifest.network.isEmpty() ->
-                append(getString(R.string.mygomusic_plugin_permission_network_none))
-            manifest.network.any { it == "*" } ->
-                append(getString(R.string.mygomusic_plugin_permission_network_any))
-            else -> {
-                append(getString(R.string.mygomusic_plugin_permission_network))
-                append('\n')
-                append(manifest.network.joinToString("\n"))
-            }
-        }
-        if (manifest.process.isNotEmpty()) {
-            append("\n\n")
-            if (manifest.process.any { it == "*" }) {
-                append(getString(R.string.mygomusic_plugin_permission_process_any))
-            } else {
-                append(getString(R.string.mygomusic_plugin_permission_process))
-                append('\n')
-                append(manifest.process.joinToString("\n"))
-            }
-        }
-    }
-
-    private fun failureMessage(error: PluginPackageException): String {
-        return when (error.kind) {
-            PluginFailureKind.NotAPlugin -> getString(R.string.mygomusic_plugin_error_not_plugin)
-            PluginFailureKind.BadId -> getString(R.string.mygomusic_plugin_error_bad_id)
-            PluginFailureKind.MainNotCompiled -> getString(R.string.mygomusic_plugin_error_main)
-            PluginFailureKind.ZipSlip -> getString(R.string.mygomusic_plugin_error_zip_slip)
-            PluginFailureKind.Link -> getString(R.string.mygomusic_plugin_error_link)
-            PluginFailureKind.TooLarge -> getString(R.string.mygomusic_plugin_error_too_large)
-            PluginFailureKind.TooManyFiles -> getString(R.string.mygomusic_plugin_error_too_many)
-            PluginFailureKind.BadManifest -> getString(R.string.mygomusic_plugin_error_manifest)
-            PluginFailureKind.AlreadyInstalled ->
-                getString(R.string.mygomusic_plugin_error_installed, error.detail ?: "")
-            PluginFailureKind.Io -> getString(R.string.mygomusic_plugin_error_io)
-            PluginFailureKind.BadRepo -> getString(R.string.mygomusic_plugin_error_repo)
-            PluginFailureKind.NoRepo -> getString(R.string.mygomusic_plugin_error_no_repo)
-            PluginFailureKind.RateLimit -> getString(R.string.mygomusic_plugin_error_rate)
-            PluginFailureKind.Github -> getString(R.string.mygomusic_plugin_error_github)
-        }
-    }
-
-    private fun locale(): Locale {
-        return ConfigurationCompat.getLocales(resources.configuration)[0] ?: Locale.getDefault()
     }
 
     private fun showAddChoices() {
@@ -311,7 +254,7 @@ class PluginListFragment : BasePreferenceFragment() {
                     dialog.dismiss()
                     model.stageGithub(repo)
                 } catch (e: PluginPackageException) {
-                    box.error = failureMessage(e)
+                    box.error = pluginFailureMessage(requireContext(), e)
                 }
             }
             button.setOnClickListener { submit() }
@@ -333,6 +276,63 @@ class PluginListFragment : BasePreferenceFragment() {
 
     private companion object {
         const val ITEM_PREFIX = "mygomusic_installed_"
+    }
+}
+
+internal fun pluginInstallMessage(context: Context, manifest: PluginManifest, repo: String): String {
+    val locale = ConfigurationCompat.getLocales(context.resources.configuration)[0] ?: Locale.getDefault()
+    return buildString {
+        append(manifest.title(locale))
+        if (manifest.version.isNotEmpty()) {
+            append('\n')
+            append(context.getString(R.string.mygomusic_plugin_install_version, manifest.version))
+        }
+        if (repo.isNotEmpty()) {
+            append('\n')
+            append(context.getString(R.string.mygomusic_plugin_install_from, repo))
+        }
+        append("\n\n")
+        when {
+            manifest.network.isEmpty() ->
+                append(context.getString(R.string.mygomusic_plugin_permission_network_none))
+            manifest.network.any { it == "*" } ->
+                append(context.getString(R.string.mygomusic_plugin_permission_network_any))
+            else -> {
+                append(context.getString(R.string.mygomusic_plugin_permission_network))
+                append('\n')
+                append(manifest.network.joinToString("\n"))
+            }
+        }
+        if (manifest.process.isNotEmpty()) {
+            append("\n\n")
+            if (manifest.process.any { it == "*" }) {
+                append(context.getString(R.string.mygomusic_plugin_permission_process_any))
+            } else {
+                append(context.getString(R.string.mygomusic_plugin_permission_process))
+                append('\n')
+                append(manifest.process.joinToString("\n"))
+            }
+        }
+    }
+}
+
+internal fun pluginFailureMessage(context: Context, error: PluginPackageException): String {
+    return when (error.kind) {
+        PluginFailureKind.NotAPlugin -> context.getString(R.string.mygomusic_plugin_error_not_plugin)
+        PluginFailureKind.BadId -> context.getString(R.string.mygomusic_plugin_error_bad_id)
+        PluginFailureKind.MainNotCompiled -> context.getString(R.string.mygomusic_plugin_error_main)
+        PluginFailureKind.ZipSlip -> context.getString(R.string.mygomusic_plugin_error_zip_slip)
+        PluginFailureKind.Link -> context.getString(R.string.mygomusic_plugin_error_link)
+        PluginFailureKind.TooLarge -> context.getString(R.string.mygomusic_plugin_error_too_large)
+        PluginFailureKind.TooManyFiles -> context.getString(R.string.mygomusic_plugin_error_too_many)
+        PluginFailureKind.BadManifest -> context.getString(R.string.mygomusic_plugin_error_manifest)
+        PluginFailureKind.AlreadyInstalled ->
+            context.getString(R.string.mygomusic_plugin_error_installed, error.detail ?: "")
+        PluginFailureKind.Io -> context.getString(R.string.mygomusic_plugin_error_io)
+        PluginFailureKind.BadRepo -> context.getString(R.string.mygomusic_plugin_error_repo)
+        PluginFailureKind.NoRepo -> context.getString(R.string.mygomusic_plugin_error_no_repo)
+        PluginFailureKind.RateLimit -> context.getString(R.string.mygomusic_plugin_error_rate)
+        PluginFailureKind.Github -> context.getString(R.string.mygomusic_plugin_error_github)
     }
 }
 

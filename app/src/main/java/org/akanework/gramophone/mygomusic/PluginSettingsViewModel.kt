@@ -26,8 +26,10 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -73,11 +75,22 @@ data class PluginSettingsUi(
     val failure: Boolean = false,
     val saveFailure: SettingSaveFailure? = null,
     val deleted: Boolean = false,
+    /** A folder or zip from this device has no repository, and no update action. */
+    val fromGithub: Boolean = false,
+    /** Bumped when an update has replaced the package, so the page is built again. */
+    val generation: Int = 0,
+    /** Up to date, or the download is a different plugin. */
+    val notice: String? = null,
+    val updateError: PluginPackageException? = null,
+    val updateOffer: PluginManifest? = null,
+    val updateRepo: String = "",
 )
 
 class PluginSettingsViewModel(app: Application) : AndroidViewModel(app) {
     private val store by lazy { PluginStore(app) }
+    private val github by lazy { PluginGithub() }
     val ui = MutableLiveData(PluginSettingsUi())
+    private var pending: StagedPlugin? = null
     private val gate = Mutex()
     private var started = false
     private var pluginId = ""
@@ -316,16 +329,166 @@ class PluginSettingsViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun checkUpdate() {
+        val state = ui.value ?: return
+        if (!started || gone || !state.fromGithub || pending != null) return
+        if (state.busy || state.signingIn || state.saving) return
+        update { it.copy(busy = true, failure = false, notice = null, updateError = null) }
+        viewModelScope.launch {
+            var staged: StagedPlugin? = null
+            try {
+                val origin = withContext(Dispatchers.IO) {
+                    store.readOrigin(store.packageDir(pluginId))
+                }
+                if (origin.repo.isEmpty()) {
+                    update { it.copy(busy = false, fromGithub = false) }
+                    return@launch
+                }
+                val latest = github.latest(origin.repo)
+                if (!pluginVersionIsNewer(latest.version, origin.version)) {
+                    update { it.copy(busy = false, notice = text(R.string.mygomusic_plugin_up_to_date)) }
+                    return@launch
+                }
+                val downloaded = github.stage(origin.repo, getApplication<Application>().cacheDir)
+                staged = downloaded
+                if (gone) return@launch
+                if (downloaded.manifest.id != pluginId) {
+                    update { it.copy(busy = false, notice = text(R.string.mygomusic_plugin_error_update_id)) }
+                    return@launch
+                }
+                // The release named above can be replaced before this download finishes.
+                val installed = withContext(Dispatchers.IO) {
+                    store.readOrigin(store.packageDir(pluginId)).version
+                }
+                if (!pluginVersionIsNewer(downloaded.originVersion, installed)) {
+                    update { it.copy(busy = false, notice = text(R.string.mygomusic_plugin_up_to_date)) }
+                    return@launch
+                }
+                pending = downloaded
+                staged = null
+                update {
+                    it.copy(busy = false, updateOffer = downloaded.manifest, updateRepo = downloaded.repo)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: PluginPackageException) {
+                Log.w(TAG, "update $pluginId", e)
+                update { it.copy(busy = false, updateError = e) }
+            } catch (e: Exception) {
+                Log.w(TAG, "update $pluginId", e)
+                update {
+                    it.copy(
+                        busy = false,
+                        updateError = PluginPackageException(PluginFailureKind.Github, cause = e),
+                    )
+                }
+            } finally {
+                val leftover = staged
+                if (leftover != null) {
+                    withContext(NonCancellable + Dispatchers.IO) { leftover.discard() }
+                }
+            }
+        }
+    }
+
+    fun confirmUpdate() {
+        val staged = pending ?: return
+        if (!started || gone || ui.value?.busy == true) return
+        pending = null
+        update { it.copy(busy = true, updateOffer = null, updateRepo = "") }
+        viewModelScope.launch {
+            try {
+                val refreshed = gate.withLock {
+                    if (gone) null
+                    else withContext(Dispatchers.IO) {
+                        try {
+                            if (staged.manifest.id != pluginId || staged.repo.isEmpty()) {
+                                throw PluginPackageException(PluginFailureKind.BadId, staged.manifest.id)
+                            }
+                            val version = staged.originVersion.ifEmpty { staged.manifest.version }
+                            store.install(staged.root, staged.manifest, staged.repo, version)
+                            read(pluginId) to readSession(pluginId)
+                        } finally {
+                            staged.discard()
+                        }
+                    }
+                }
+                if (refreshed == null || gone) return@launch
+                val (base, session) = refreshed
+                val generation = (ui.value?.generation ?: 0) + 1
+                update {
+                    base.copy(
+                        generation = generation,
+                        sessionReady = true,
+                        offersSignIn = session.offered,
+                        canSignIn = session.canSignIn,
+                        signedIn = session.signedIn,
+                        accountName = session.name,
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: PluginPackageException) {
+                Log.w(TAG, "update $pluginId", e)
+                if (!gone) update { it.copy(busy = false, updateError = e) }
+            } catch (e: Exception) {
+                Log.w(TAG, "update $pluginId", e)
+                if (!gone) {
+                    update {
+                        it.copy(
+                            busy = false,
+                            updateError = PluginPackageException(PluginFailureKind.Io, cause = e),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fun discardUpdate() {
+        val staged = pending
+        pending = null
+        update { it.copy(updateOffer = null, updateRepo = "") }
+        if (staged != null) {
+            viewModelScope.launch(Dispatchers.IO) { staged.discard() }
+        }
+    }
+
+    fun clearNotice() {
+        update { it.copy(notice = null) }
+    }
+
+    fun clearUpdateError() {
+        update { it.copy(updateError = null) }
+    }
+
+    override fun onCleared() {
+        val staged = pending
+        pending = null
+        if (staged != null) {
+            CoroutineScope(Dispatchers.IO).launch { staged.discard() }
+        }
+    }
+
+    private fun text(message: Int): String = getApplication<Application>().getString(message)
+
     private fun read(id: String): PluginSettingsUi {
         return try {
             val dir = store.packageDir(id)
             if (!dir.isDirectory) return PluginSettingsUi(missing = true)
             val enabled = store.isEnabled(id)
+            val fromGithub = store.readOrigin(dir).repo.isNotEmpty()
             val manifest = try {
                 PluginManifest.read(dir)
             } catch (e: Exception) {
                 Log.w(TAG, "plugin $id", e)
-                return PluginSettingsUi(ready = true, broken = true, enabled = enabled, title = id)
+                return PluginSettingsUi(
+                    ready = true,
+                    broken = true,
+                    enabled = enabled,
+                    title = id,
+                    fromGithub = fromGithub,
+                )
             }
             val records = PluginRecords(store.dataDir(id))
             val locale = locale()
@@ -337,6 +500,7 @@ class PluginSettingsViewModel(app: Application) : AndroidViewModel(app) {
                 settings = settings,
                 values = settings.associate { it.key to records.setting(it.key) },
                 network = manifest.network,
+                fromGithub = fromGithub,
             )
         } catch (e: Exception) {
             Log.w(TAG, "plugin $id", e)

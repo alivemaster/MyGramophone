@@ -82,6 +82,27 @@ internal fun parsePluginRepo(input: String): String {
     return s
 }
 
+/**
+ * A tag of numbers, such as v1.2.3, compares by those numbers, so a release
+ * taken back is not an update. A commit has no order: a different one is new.
+ */
+internal fun pluginVersionIsNewer(latest: String, installed: String): Boolean {
+    if (latest == installed) return false
+    val a = versionNumbers(latest)
+    val b = versionNumbers(installed)
+    if (a == null || b == null) return true
+    val count = maxOf(a.size, b.size)
+    for (i in 0 until count) {
+        val x = if (i < a.size) a[i] else 0L
+        val y = if (i < b.size) b[i] else 0L
+        if (x != y) return x > y
+    }
+    return false
+}
+
+/** Release tag or the short commit id. This does not download the plugin. */
+internal data class PluginRelease(val version: String)
+
 /** Index of a zip that names no platform, or -1 when every zip does. */
 internal fun pickPluginArchive(names: List<String>): Int {
     var general = -1
@@ -98,6 +119,10 @@ internal class PluginGithub(
     private val apiBase: String = "https://api.github.com",
     private val client: OkHttpClient = sharedClient,
 ) {
+    suspend fun latest(repoInput: String): PluginRelease = withContext(Dispatchers.IO) {
+        PluginRelease(resolve(parsePluginRepo(repoInput)).version)
+    }
+
     suspend fun stage(repoInput: String, cacheDir: File): StagedPlugin = withContext(Dispatchers.IO) {
         val repo = parsePluginRepo(repoInput)
         val offer = resolve(repo)
@@ -228,6 +253,22 @@ internal class PluginGithub(
             .callTimeout(10, TimeUnit.MINUTES)
             .build()
     }
+}
+
+/** v1.2.3 or 1.2. A label such as 1.2.3-beta is not ordered by its numbers. */
+private fun versionNumbers(tag: String): LongArray? {
+    val body = if (tag.startsWith("v")) tag.substring(1) else tag
+    if (body.isEmpty()) return null
+    val parts = body.split('.')
+    val numbers = LongArray(parts.size)
+    for (i in parts.indices) {
+        val part = parts[i]
+        if (part.isEmpty() || part.any { it !in '0'..'9' }) return null
+        val n = part.toLongOrNull() ?: return null
+        if (n < 0) return null
+        numbers[i] = n
+    }
+    return numbers
 }
 
 private fun isHttp(url: String): Boolean {

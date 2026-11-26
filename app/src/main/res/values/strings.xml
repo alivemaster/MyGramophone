@@ -308,8 +308,16 @@
     <string name="mygomusic_plugin_delete_message">%1$s will be removed.</string>
     <!-- Checkbox on the delete confirmation. Unchecked keeps the plugin's saved settings. -->
     <string name="mygomusic_plugin_delete_data">Also delete plugin settings</string>
-    <!-- Menu item on an installed plugin. Does not check yet. -->
+    <!-- Overflow item. Shown only when the plugin was installed from GitHub. -->
     <string name="mygomusic_plugin_check_update">Check for updates</string>
+    <!-- The repository is not newer than the installed release or commit. -->
+    <string name="mygomusic_plugin_up_to_date">Up to date</string>
+    <!-- Confirmation before a newer release replaces the installed plugin. Title -->
+    <string name="mygomusic_plugin_update_title">Update this plugin?</string>
+    <!-- Confirmation button. Writes the downloaded plugin after the user agrees. -->
+    <string name="mygomusic_plugin_update">Update</string>
+    <!-- The release's plugin id is not the plugin being updated. -->
+    <string name="mygomusic_plugin_error_update_id">This update is a different plugin.</string>
     <!-- The selected file or folder has no plugin.json in the expected place -->
     <string name="mygomusic_plugin_error_not_plugin">This is not a plugin. It needs a plugin.json at the top, or in its only folder.</string>
     <!-- plugin.json id is missing or not a safe folder name -->

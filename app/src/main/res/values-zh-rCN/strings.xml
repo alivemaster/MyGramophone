@@ -139,6 +139,10 @@
     <string name="mygomusic_plugin_delete_message">将删除%1$s。</string>
     <string name="mygomusic_plugin_delete_data">同时删除插件设置</string>
     <string name="mygomusic_plugin_check_update">检查更新</string>
+    <string name="mygomusic_plugin_up_to_date">已是最新版本</string>
+    <string name="mygomusic_plugin_update_title">更新这个插件？</string>
+    <string name="mygomusic_plugin_update">更新</string>
+    <string name="mygomusic_plugin_error_update_id">这个更新不是当前插件。</string>
     <string name="mygomusic_plugin_error_not_plugin">这不是插件。plugin.json 需要在顶层，或在唯一的那一层文件夹里。</string>
     <string name="mygomusic_plugin_error_bad_id">这个插件的 id 不被允许。</string>
     <string name="mygomusic_plugin_error_main">这个插件没有编译好的 JavaScript。main 必须是插件目录里的 .js 文件。</string>

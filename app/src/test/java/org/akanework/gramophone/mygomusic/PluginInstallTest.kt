@@ -429,6 +429,60 @@ class PluginInstallTest {
     }
 
     @Test
+    fun aReleaseTagComparesAsNumbersAndACommitByDifference() {
+        val cases = listOf(
+            Triple("v1.2.0", "v1.1.9", true),
+            Triple("v1.10.0", "v1.9.0", true),
+            Triple("v1.1.0", "v1.2.0", false),
+            Triple("v1.2", "1.2.0", false),
+            Triple("1.2.1", "v1.2", true),
+            Triple("v1.2.0", "v1.2.0", false),
+            Triple("abc123def456", "0123456789ab", true),
+            Triple("v1.0.0", "0123456789ab", true),
+            Triple("v2.0.0-beta", "v1.0.0", true),
+        )
+        for ((latest, installed, want) in cases) {
+            assertEquals("$latest vs $installed", want, pluginVersionIsNewer(latest, installed))
+        }
+    }
+
+    @Test
+    fun latestReleaseIsTheTagAndDoesNotDownloadThePlugin() {
+        FakeGithub(tag = "v1.2.0", assets = listOf("plugin.zip"), archive = byteArrayOf()).use { github ->
+            val release = runBlocking { PluginGithub(github.base).latest("owner/repo") }
+            assertEquals("v1.2.0", release.version)
+            assertEquals(listOf("/repos/owner/repo/releases/latest"), github.paths)
+        }
+    }
+
+    @Test
+    fun sameRepositoryUpdateReplacesFilesAndKeepsData() {
+        val root = tempDir()
+        try {
+            val store = PluginStore(root)
+            val cache = File(root, "cache").apply { mkdirs() }
+            val first = fixture(cache, "demo", "1")
+            File(first.root, "old.js").writeText("gone")
+            store.install(first.root, first.manifest, "owner/demo", "v1.0.0")
+            first.discard()
+            val data = store.dataDir("demo")
+            data.mkdirs()
+            File(data, "settings.json").writeText("""{"kept":"yes"}""")
+            val next = fixture(cache, "demo", "2")
+            store.install(next.root, next.manifest, "owner/demo", "v1.1.0")
+            next.discard()
+            val dir = storeDir(root, "demo")
+            assertFalse(File(dir, "old.js").exists())
+            assertTrue(File(dir, "index.js").isFile)
+            assertEquals("2", PluginManifest.read(dir).version)
+            assertEquals(PluginOrigin("owner/demo", "v1.1.0"), store.readOrigin(dir))
+            assertEquals("""{"kept":"yes"}""", File(data, "settings.json").readText())
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun missingRepositoryAndRateLimitAreDistinct() {
         val cache = tempDir()
         try {
