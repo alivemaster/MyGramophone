@@ -172,6 +172,9 @@ internal object PluginDataSource {
 
     private suspend fun resolve(context: Context, uri: Uri): Resolved {
         val (pluginId, trackId) = parsePlayUri(uri) ?: throw IOException("stream")
+        if (playUriUnavailable(uri)) {
+            throw IOException("stream", PluginCallException("unavailable", "unavailable"))
+        }
         return try {
             val loaded = load(context, pluginId)
             if (loaded.manifest.playback != "stream") throw IOException("stream")
@@ -379,6 +382,17 @@ internal fun missingExport(error: Throwable): Boolean {
     var current: Throwable? = error
     while (current != null) {
         if (current.message?.contains("missing export") == true) return true
+        current = current.cause
+    }
+    return false
+}
+
+/** True when a plugin said this track cannot be played, such as no release or no membership. */
+internal fun pluginUnavailable(error: Throwable?): Boolean {
+    var current = error
+    val seen = HashSet<Throwable>()
+    while (current != null && seen.add(current)) {
+        if (current is PluginCallException && current.code == "unavailable") return true
         current = current.cause
     }
     return false

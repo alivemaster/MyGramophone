@@ -122,6 +122,8 @@ import org.akanework.gramophone.mygomusic.PluginCallException
 import org.akanework.gramophone.mygomusic.PluginDataSource
 import org.akanework.gramophone.mygomusic.PluginLikes
 import org.akanework.gramophone.mygomusic.PluginLyrics
+import org.akanework.gramophone.mygomusic.playUriUnavailable
+import org.akanework.gramophone.mygomusic.pluginUnavailable
 import org.akanework.gramophone.mygomusic.parsePluginMediaId
 import org.akanework.gramophone.mygomusic.withPluginHeart
 import org.akanework.gramophone.logic.ui.MeiZuLyricsMediaNotificationProvider
@@ -219,6 +221,7 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
     private var likeJob: Job? = null
     @Volatile private var heartTrackId: String? = null
     @Volatile private var heartEpoch = 0
+    private var unavailableSkips = 0
     lateinit var qb: QueueBoard
     private val sendLyrics = Runnable { scheduleSendingLyrics(false) }
     var lyrics: SemanticLyrics? = null
@@ -1708,7 +1711,26 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
     }
 
     override fun onPlayerError(error: PlaybackException) {
-        // TODO
+        val current = endedWorkaroundPlayer?.exoPlayer?.currentMediaItem
+        val marked = current?.localConfiguration?.uri?.let { playUriUnavailable(it) } == true
+        if (marked || pluginUnavailable(error)) skipUnavailableTrack()
+    }
+
+    /** The source cannot play the current plugin track. Move on, and stop if none of the queue can. */
+    private fun skipUnavailableTrack() {
+        val exo = endedWorkaroundPlayer?.exoPlayer ?: return
+        val total = exo.mediaItemCount
+        if (total == 0) return
+        unavailableSkips++
+        val next = exo.nextMediaItemIndex
+        if (unavailableSkips >= total || next == C.INDEX_UNSET) {
+            unavailableSkips = 0
+            exo.playWhenReady = false
+            return
+        }
+        exo.seekToNextMediaItem()
+        exo.prepare()
+        exo.playWhenReady = true
     }
 
     override fun onDeviceInfoChanged(deviceInfo: DeviceInfo) {
@@ -1808,6 +1830,7 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
     }
 
     override fun onIsPlayingChanged(isPlaying: Boolean) {
+        if (isPlaying) unavailableSkips = 0
         scheduleSendingLyrics(false)
         lastPlayedManager.save()
     }

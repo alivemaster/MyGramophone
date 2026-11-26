@@ -18,10 +18,12 @@
 package org.akanework.gramophone.mygomusic
 
 import android.content.res.Configuration
+import android.graphics.Color
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.TextView
+import androidx.appcompat.content.res.AppCompatResources
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.media3.common.MediaItem
@@ -31,6 +33,7 @@ import coil3.dispose
 import coil3.load
 import coil3.request.error
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.color.MaterialColors
 import org.akanework.gramophone.R
 import org.akanework.gramophone.logic.ui.placeholderScaleToFit
 import org.akanework.gramophone.ui.MediaControllerViewModel
@@ -159,7 +162,7 @@ internal class PluginRowsAdapter(
         return when (viewType) {
             R.layout.general_decor -> DecorHolder(view)
             R.layout.mygomusic_section -> HeaderHolder(view)
-            else -> RowHolder(view)
+            else -> RowHolder(view).also(::addRowRipple)
         }
     }
 
@@ -206,6 +209,7 @@ internal class PluginRowsAdapter(
     private fun bindRow(holder: RowHolder, row: PluginRow) {
         holder.title.text = row.title
         holder.artist.text = row.subtitle
+        rowText(holder, unavailable = false)
         holder.nowPlaying.visibility = View.GONE
         loadCover(holder.cover, row.imageUrl, R.drawable.ic_default_cover_playlist)
         val menu = row.menu.any && row.open !is Open.None
@@ -223,9 +227,13 @@ internal class PluginRowsAdapter(
         val track = entry.track
         holder.title.text = track.name
         holder.artist.text = track.artists.ifBlank { context.getString(R.string.unknown_artist) }
+        rowText(holder, track.unavailable)
         loadCover(holder.cover, track.imageUrl, R.drawable.ic_default_cover)
         holder.more.visibility = View.VISIBLE
-        holder.itemView.setOnClickListener { onTrack(tracks, entry.index) }
+        // A track the source cannot play still takes the click, so the ripple stays.
+        holder.itemView.setOnClickListener {
+            if (!track.unavailable) onTrack(tracks, entry.index)
+        }
         holder.itemView.setOnLongClickListener {
             onTrackMenu(track, it)
             true
@@ -242,6 +250,33 @@ internal class PluginRowsAdapter(
             NowPlayingDrawable(context).also { it.level = if (currentIsPlaying == true) 1 else 0 },
         )
         holder.nowPlaying.visibility = View.VISIBLE
+    }
+
+    /** Disabled content is on-surface at 38% opacity. */
+    private fun rowText(holder: RowHolder, unavailable: Boolean) {
+        val title = MaterialColors.getColor(
+            holder.title,
+            com.google.android.material.R.attr.colorOnSurface,
+        )
+        val artist = MaterialColors.getColor(
+            holder.artist,
+            com.google.android.material.R.attr.colorOnSurfaceVariant,
+        )
+        if (!unavailable) {
+            holder.title.setTextColor(title)
+            holder.artist.setTextColor(artist)
+            return
+        }
+        holder.title.setTextColor(Color.argb((0.38f * 255).toInt(), Color.red(title), Color.green(title), Color.blue(title)))
+        holder.artist.setTextColor(Color.argb((0.38f * 255).toInt(), Color.red(artist), Color.green(artist), Color.blue(artist)))
+    }
+
+    /** The shared song row has no ripple of its own. Plugin rows keep one, including when a track cannot be played. */
+    private fun addRowRipple(holder: RowHolder) {
+        val value = android.util.TypedValue()
+        if (!context.theme.resolveAttribute(android.R.attr.selectableItemBackground, value, true)) return
+        if (value.resourceId == 0) return
+        holder.itemView.foreground = AppCompatResources.getDrawable(context, value.resourceId)
     }
 
     private fun loadCover(view: ImageView, url: String?, placeholder: Int) {

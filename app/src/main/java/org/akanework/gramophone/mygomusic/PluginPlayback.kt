@@ -55,9 +55,13 @@ internal fun parsePluginMediaId(mediaId: String): Pair<String, String>? {
     return pluginId to trackId
 }
 
-internal fun playUri(pluginId: String, trackId: String): Uri {
-    return "$PLAY_SCHEME://play/${Uri.encode(pluginId)}/${Uri.encode(trackId)}".toUri()
+internal fun playUri(pluginId: String, trackId: String, unavailable: Boolean = false): Uri {
+    val base = "$PLAY_SCHEME://play/${Uri.encode(pluginId)}/${Uri.encode(trackId)}"
+    return (if (unavailable) "$base?unavailable=1" else base).toUri()
 }
+
+/** The source marked this track unplayable. The queue still keeps it. */
+internal fun playUriUnavailable(uri: Uri): Boolean = uri.getQueryParameter("unavailable") == "1"
 
 /** Path segments are decoded, so a slash inside an id survives as one segment. */
 internal fun parsePlayUri(uri: Uri): Pair<String, String>? {
@@ -109,7 +113,7 @@ internal fun PluginTrack.toMediaItem(pluginId: String): MediaItem {
     return MediaItem.Builder()
         .setMediaId(pluginMediaId(pluginId, id))
         // localConfiguration makes the queue keep this item. The stream URL is filled in when it plays.
-        .setUri(playUri(pluginId, id))
+        .setUri(playUri(pluginId, id, unavailable))
         .setMediaMetadata(metadata)
         .build()
 }

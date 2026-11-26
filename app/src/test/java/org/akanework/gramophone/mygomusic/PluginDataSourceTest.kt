@@ -247,6 +247,23 @@ class PluginDataSourceTest {
     }
 
     @Test
+    fun unavailableTrackStaysInTheQueueAndTheStreamErrorSaysSo() {
+        val tracks = parseTracks(
+            org.json.JSONArray(
+                """[{"id":"1","name":"No"},{"id":"2","name":"Yes","unavailable":true}]""",
+            ),
+        )
+        assertFalse(tracks[0].unavailable)
+        assertTrue(tracks[1].unavailable)
+        val blocked = tracks[1].toMediaItem("demo")
+        assertEquals("demo" to "2", parsePlayUri(blocked.localConfiguration!!.uri))
+        assertTrue(playUriUnavailable(blocked.localConfiguration!!.uri))
+        assertFalse(playUriUnavailable(tracks[0].toMediaItem("demo").localConfiguration!!.uri))
+        assertTrue(pluginUnavailable(java.io.IOException("stream", PluginCallException("unavailable", "vip"))))
+        assertFalse(pluginUnavailable(java.io.IOException("stream", PluginCallException("signIn", "in"))))
+    }
+
+    @Test
     fun playUriKeepsAColonInsideTheTrackId() {
         val uri = playUri("demo", "chart:1")
         assertEquals("demo" to "chart:1", parsePlayUri(uri))

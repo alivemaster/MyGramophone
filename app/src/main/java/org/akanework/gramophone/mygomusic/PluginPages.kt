@@ -40,6 +40,8 @@ internal data class PluginTrack(
     val released: String = "",
     /** Set for an episode. The heart then uses likeEpisode, not like. */
     val showId: String = "",
+    /** The source already knows this track cannot be played. */
+    val unavailable: Boolean = false,
 )
 
 internal data class PluginCaps(
@@ -277,6 +279,7 @@ internal fun parseTracks(arr: JSONArray?): List<PluginTrack> {
                     artistNames(album?.optJSONArray("artists")),
                     album?.str("released").orEmpty(),
                     obj.str("showId"),
+                    obj.bool("unavailable"),
                 ),
             )
         }
