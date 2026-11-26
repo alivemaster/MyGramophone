@@ -119,6 +119,7 @@
             </LinearLayout>
 
             <LinearLayout
+                android:id="@+id/artist_box"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="24dp"
@@ -154,6 +155,7 @@
             </LinearLayout>
 
             <LinearLayout
+                android:id="@+id/album_box"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="24dp"
@@ -189,6 +191,7 @@
             </LinearLayout>
 
             <LinearLayout
+                android:id="@+id/album_artist_box"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="24dp"
@@ -224,6 +227,7 @@
             </LinearLayout>
 
             <LinearLayout
+                android:id="@+id/disc_box"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="24dp"
@@ -259,6 +263,7 @@
             </LinearLayout>
 
             <LinearLayout
+                android:id="@+id/track_box"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="24dp"
@@ -330,6 +335,7 @@
             </LinearLayout>
 
             <LinearLayout
+                android:id="@+id/year_box"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="24dp"
@@ -373,6 +379,7 @@
                 android:layout_marginBottom="24dp" />
 
             <LinearLayout
+                android:id="@+id/duration_box"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="24dp"
@@ -407,6 +414,7 @@
             </LinearLayout>
 
             <LinearLayout
+                android:id="@+id/bitrate_box"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="24dp"
@@ -442,6 +450,7 @@
             </LinearLayout>
 
             <LinearLayout
+                android:id="@+id/mime_box"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="24dp"
@@ -476,6 +485,7 @@
             </LinearLayout>
 
             <LinearLayout
+                android:id="@+id/path_box"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="24dp"
@@ -496,6 +506,52 @@
 
                 <TextView
                     android:id="@+id/path"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center_vertical"
+                    android:layout_marginStart="50dp"
+                    android:fontFamily="sans-serif"
+                    android:gravity="end"
+                    android:textColor="?colorOnSurface"
+                    android:textIsSelectable="true"
+                    android:textSize="16sp"
+                    app:textFontWeight="500" />
+
+            </LinearLayout>
+
+            <com.google.android.material.divider.MaterialDivider
+                android:id="@+id/source_divider"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="24dp"
+                android:layout_marginTop="18dp"
+                android:layout_marginEnd="24dp"
+                android:layout_marginBottom="24dp"
+                android:visibility="gone" />
+
+            <LinearLayout
+                android:id="@+id/source_box"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="24dp"
+                android:layout_marginTop="4dp"
+                android:layout_marginEnd="24dp"
+                android:layout_marginBottom="10dp"
+                android:orientation="horizontal"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center_vertical"
+                    android:fontFamily="sans-serif"
+                    android:text="@string/dialog_source"
+                    android:textColor="?colorPrimary"
+                    android:textSize="17sp"
+                    app:textFontWeight="500" />
+
+                <TextView
+                    android:id="@+id/source"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_gravity="center_vertical"

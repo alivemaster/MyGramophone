@@ -17,7 +17,10 @@
 
 package org.akanework.gramophone.mygomusic
 
+import android.content.Context
 import android.net.Uri
+import android.os.Build
+import android.os.Bundle
 import androidx.core.net.toUri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -25,6 +28,10 @@ import androidx.media3.common.Player
 import org.akanework.gramophone.logic.setMediaItemsSeamlessly
 import org.akanework.gramophone.logic.setMediaItemsWithTitle
 import org.akanework.gramophone.ui.MainActivity
+import java.util.Locale
+
+/** Album release text kept for the detail page. The source's own wording. */
+internal const val PLUGIN_RELEASED = "pluginReleased"
 
 internal const val PLAY_SCHEME = "mygramophone"
 
@@ -59,13 +66,39 @@ internal fun parsePlayUri(uri: Uri): Pair<String, String>? {
     return pluginId to trackId
 }
 
+internal fun pluginTitle(context: Context, pluginId: String): String {
+    val store = PluginStore(context.applicationContext)
+    return try {
+        PluginManifest.read(store.packageDir(pluginId)).title(pluginLocale(context))
+    } catch (_: Exception) {
+        pluginId
+    }
+}
+
+private fun pluginLocale(context: Context): Locale {
+    val config = context.resources.configuration
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+        config.locales[0]
+    } else {
+        @Suppress("DEPRECATION")
+        config.locale
+    }
+}
+
 internal fun PluginTrack.toMediaItem(pluginId: String): MediaItem {
     // Both ids are percent-encoded so a ':' inside either one cannot split mediaId.
     val metadata = MediaMetadata.Builder()
         .setTitle(name)
         .setArtist(artists.ifBlank { null })
         .setAlbumTitle(album.ifBlank { null })
+        .setAlbumArtist(albumArtist.ifBlank { null })
         .setArtworkUri(imageUrl?.takeIf { it.isNotBlank() }?.toUri())
+        .apply {
+            if (durationMs > 0) setDurationMs(durationMs)
+            if (released.isNotEmpty()) {
+                setExtras(Bundle().apply { putString(PLUGIN_RELEASED, released) })
+            }
+        }
         .build()
     return MediaItem.Builder()
         .setMediaId(pluginMediaId(pluginId, id))

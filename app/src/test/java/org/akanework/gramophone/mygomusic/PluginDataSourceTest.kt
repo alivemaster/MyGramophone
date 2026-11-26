@@ -197,6 +197,27 @@ class PluginDataSourceTest {
     }
 
     @Test
+    fun pluginItemKeepsTheFieldsTheDetailPageShows() {
+        val item = PluginTrack(
+            id = "1",
+            name = "Song",
+            artists = "A",
+            album = "Al",
+            imageUrl = "https://img.example/a.jpg",
+            durationMs = 125_000,
+            albumArtist = "B",
+            released = "2024-03-01",
+        ).toMediaItem("demo")
+        assertEquals("Song", item.mediaMetadata.title.toString())
+        assertEquals("A", item.mediaMetadata.artist.toString())
+        assertEquals("Al", item.mediaMetadata.albumTitle.toString())
+        assertEquals("B", item.mediaMetadata.albumArtist.toString())
+        assertEquals(125_000L, item.mediaMetadata.durationMs)
+        assertEquals("2024-03-01", item.mediaMetadata.extras?.getString(PLUGIN_RELEASED))
+        assertEquals("plugin:demo:1", item.mediaId)
+    }
+
+    @Test
     fun playUriKeepsAColonInsideTheTrackId() {
         val uri = playUri("demo", "chart:1")
         assertEquals("demo" to "chart:1", parsePlayUri(uri))

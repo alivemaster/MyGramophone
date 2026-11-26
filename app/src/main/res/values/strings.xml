@@ -145,6 +145,7 @@
     <string name="dialog_year">Year</string>
     <!-- Shown next to song's file path in detail UI -->
     <string name="dialog_path">Path</string>
+    <string name="dialog_source">Source</string>
     <!-- Used in place of the album name if the album can't be found unexpectedly -->
     <string name="unknown_album">Unknown album</string>
     <!-- A playlist that has songs that were recently added to this device -->

@@ -34,6 +34,10 @@ internal data class PluginTrack(
     val artists: String,
     val album: String,
     val imageUrl: String?,
+    val durationMs: Long = 0,
+    val albumArtist: String = "",
+    /** Album release text as the source wrote it, such as a year or a date. */
+    val released: String = "",
 )
 
 internal data class PluginCaps(
@@ -260,7 +264,18 @@ internal fun parseTracks(arr: JSONArray?): List<PluginTrack> {
             if (id.isEmpty() || name.isEmpty()) continue
             val album = obj.optJSONObject("album")
             val image = obj.str("imageUrl").ifEmpty { album?.str("imageUrl").orEmpty() }.ifEmpty { null }
-            add(PluginTrack(id, name, artistNames(obj.optJSONArray("artists")), album?.str("name").orEmpty(), image))
+            add(
+                PluginTrack(
+                    id,
+                    name,
+                    artistNames(obj.optJSONArray("artists")),
+                    album?.str("name").orEmpty(),
+                    image,
+                    (obj.opt("duration") as? Number)?.toLong() ?: 0,
+                    artistNames(album?.optJSONArray("artists")),
+                    album?.str("released").orEmpty(),
+                ),
+            )
         }
     }
 }

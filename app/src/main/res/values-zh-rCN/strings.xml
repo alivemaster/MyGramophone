@@ -46,6 +46,7 @@
     <string name="dialog_track_number">音轨号</string>
     <string name="dialog_year">年份</string>
     <string name="dialog_path">路径</string>
+    <string name="dialog_source">来源</string>
     <string name="unknown_album">未知专辑</string>
     <string name="recently_added">最近添加</string>
     <string name="folders">文件夹</string>

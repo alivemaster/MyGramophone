@@ -23,6 +23,9 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.TextView
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import coil3.load
 import coil3.request.crossfade
 import coil3.request.error
@@ -44,6 +47,9 @@ import org.akanework.gramophone.logic.toLocaleString
 import org.akanework.gramophone.logic.toMediaStoreId
 import org.akanework.gramophone.logic.ui.placeholderScaleToFit
 import org.akanework.gramophone.logic.utils.CalculationUtils.convertDurationToTimeStamp
+import org.akanework.gramophone.mygomusic.PLUGIN_RELEASED
+import org.akanework.gramophone.mygomusic.parsePluginMediaId
+import org.akanework.gramophone.mygomusic.pluginTitle
 
 class DetailDialogFragment : BaseFragment(false) {
 
@@ -58,7 +64,15 @@ class DetailDialogFragment : BaseFragment(false) {
         rootView.findViewById<MaterialToolbar>(R.id.topAppBar).setNavigationOnClickListener {
             requireActivity().supportFragmentManager.popBackStack()
         }
-        val id = requireArguments().getString("Id")?.toMediaStoreId()
+        val rawId = requireArguments().getString("Id")
+        if (parsePluginMediaId(rawId.orEmpty()) != null) {
+            if (!showPlugin(rootView, rawId!!)) {
+                parentFragmentManager.popBackStack()
+                return null
+            }
+            return rootView
+        }
+        val id = rawId?.toMediaStoreId()
         val mediaItem = runBlocking { mainActivity.reader.idMapFlow.map { it[id] }.first() }
         if (mediaItem == null) {
             parentFragmentManager.popBackStack()
@@ -117,5 +131,81 @@ class DetailDialogFragment : BaseFragment(false) {
             }
         }
         return rootView
+    }
+
+    /**
+     * Plugin tracks are not in the local library. Show the fields the source
+     * put on the queue item, and the plugin name. File rows stay hidden.
+     */
+    private fun showPlugin(rootView: View, mediaId: String): Boolean {
+        val player = mainActivity.getPlayer() ?: return false
+        val item = queuedItem(player, mediaId) ?: return false
+        val metadata = item.mediaMetadata
+        rootView.findViewById<ImageView>(R.id.album_cover).load(metadata.artworkUri) {
+            placeholderScaleToFit(R.drawable.ic_default_cover)
+            crossfade(true)
+            error(R.drawable.ic_default_cover)
+        }
+        rootView.findViewById<TextView>(R.id.title).text =
+            metadata.title?.takeIf { it.isNotBlank() } ?: getString(R.string.unknown_title)
+        textRow(rootView, R.id.artist_box, R.id.artist, metadata.artist)
+        textRow(rootView, R.id.album_box, R.id.album, metadata.albumTitle)
+        textRow(rootView, R.id.album_artist_box, R.id.album_artist, metadata.albumArtist)
+        textRow(rootView, R.id.year_box, R.id.date, metadata.extras?.getString(PLUGIN_RELEASED))
+        val duration = playedDuration(player, mediaId) ?: metadata.durationMs?.takeIf { it > 0 }
+        textRow(
+            rootView,
+            R.id.duration_box,
+            R.id.duration,
+            duration?.let { convertDurationToTimeStamp(it) },
+        )
+        for (box in intArrayOf(
+            R.id.disc_box,
+            R.id.track_box,
+            R.id.genre_box,
+            R.id.bitrate_box,
+            R.id.mime_box,
+            R.id.path_box,
+        )) {
+            rootView.findViewById<View>(box).visibility = View.GONE
+        }
+        val source = rootView.findViewById<TextView>(R.id.source)
+        rootView.findViewById<View>(R.id.source_divider).visibility = View.VISIBLE
+        rootView.findViewById<View>(R.id.source_box).visibility = View.VISIBLE
+        val pluginId = parsePluginMediaId(mediaId)?.first ?: return true
+        val appContext = requireContext().applicationContext
+        CoroutineScope(Dispatchers.IO).launch {
+            val name = pluginTitle(appContext, pluginId)
+            withContext(Dispatchers.Main) {
+                if (view != null) source.text = name
+            }
+        }
+        return true
+    }
+
+    private fun textRow(root: View, boxId: Int, valueId: Int, value: CharSequence?) {
+        val box = root.findViewById<View>(boxId)
+        if (value.isNullOrBlank()) {
+            box.visibility = View.GONE
+        } else {
+            box.visibility = View.VISIBLE
+            root.findViewById<TextView>(valueId).text = value
+        }
+    }
+
+    private fun queuedItem(player: Player, mediaId: String): MediaItem? {
+        if (player.currentMediaItem?.mediaId == mediaId) return player.currentMediaItem
+        for (i in 0 until player.mediaItemCount) {
+            val item = player.getMediaItemAt(i)
+            if (item.mediaId == mediaId) return item
+        }
+        return null
+    }
+
+    private fun playedDuration(player: Player, mediaId: String): Long? {
+        if (player.currentMediaItem?.mediaId != mediaId) return null
+        val duration = player.duration
+        if (duration == C.TIME_UNSET || duration < 0) return null
+        return duration
     }
 }
