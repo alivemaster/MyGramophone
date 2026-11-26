@@ -16,10 +16,16 @@
   ~     along with this program.  If not, see <https://www.gnu.org/licenses/>.
   -->
 
-<!-- waitForRedirect listens on this machine. The browser is sent back over http. -->
+<!--
+  Cleartext stays allowed. waitForRedirect is http on this machine, and a plugin
+  may be aimed at an http server the user typed (often a bare LAN address).
+  The network-security config cannot name that host ahead of time.
+  permissions.network still limits plugin fetch.
+-->
 <network-security-config>
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="false">127.0.0.1</domain>
-        <domain includeSubdomains="false">localhost</domain>
-    </domain-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
 </network-security-config>

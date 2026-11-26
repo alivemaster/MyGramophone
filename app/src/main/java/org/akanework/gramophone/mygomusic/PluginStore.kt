@@ -118,9 +118,13 @@ class PluginStore(private val root: File) {
         if (target.isDirectory && readOrigin(target).repo != repo) {
             throw PluginPackageException(PluginFailureKind.AlreadyInstalled, manifest.id)
         }
-        writeOrigin(pluginRoot, originVersion, repo)
-        place(pluginRoot, target)
-        remember(manifest.id)
+        try {
+            writeOrigin(pluginRoot, originVersion, repo)
+            place(pluginRoot, target)
+            remember(manifest.id)
+        } finally {
+            PluginHeaderCache.invalidate()
+        }
     }
 
     fun delete(id: String, deleteData: Boolean = false) {
@@ -136,6 +140,7 @@ class PluginStore(private val root: File) {
         }
         val order = readOrder()
         if (order.remove(id)) writeOrder(order)
+        PluginHeaderCache.invalidate()
     }
 
     fun readOrigin(dir: File): PluginOrigin {

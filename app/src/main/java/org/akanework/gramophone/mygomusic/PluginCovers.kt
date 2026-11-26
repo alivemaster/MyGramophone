@@ -19,11 +19,14 @@ package org.akanework.gramophone.mygomusic
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import coil3.intercept.Interceptor
 import coil3.network.httpHeaders
 import coil3.request.ImageResult
 import coil3.size.Dimension
 import coil3.size.Size
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import okhttp3.Call
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -55,7 +58,7 @@ internal object PluginCovers {
     /** First rule to set a name wins. An empty placeholder or a line break drops that header. */
     fun headerMap(
         rules: List<PluginHeaderRule>,
-        records: PluginRecords,
+        records: HeaderValues,
         url: String,
         kind: String,
         network: List<String>,
@@ -84,25 +87,7 @@ internal object PluginCovers {
      * matches the host. An empty result means no plugin claims it.
      */
     fun pluginImageHeaders(context: Context, url: String): Map<String, String> {
-        val store = PluginStore(context)
-        for (plugin in store.list(Locale.ROOT)) {
-            if (plugin.broken) continue
-            val manifest = try {
-                PluginManifest.read(store.packageDir(plugin.directoryName))
-            } catch (_: Exception) {
-                continue
-            }
-            if (manifest.headerRules.isEmpty()) continue
-            val headers = headerMap(
-                manifest.headerRules,
-                PluginRecords(store.dataDir(plugin.directoryName)),
-                url,
-                "image",
-                manifest.network,
-            )
-            if (headers.isNotEmpty()) return headers
-        }
-        return emptyMap()
+        return PluginHeaderCache.headers(context, url)
     }
 }
 
@@ -130,8 +115,9 @@ internal class PluginCoverInterceptor(private val context: Context) : Intercepto
             raw.startsWith("https://", ignoreCase = true)
         if (!placeholder && !http) return chain.proceed()
         val sized = if (placeholder) PluginCovers.sized(raw, coverPixels(chain.size)) ?: raw else raw
+        // List layout starts Coil on the main thread. The directory read stays off it.
         val plugin = if (sized.startsWith("http://", true) || sized.startsWith("https://", true)) {
-            PluginCovers.pluginImageHeaders(context, sized)
+            withContext(Dispatchers.IO) { PluginCovers.pluginImageHeaders(context, sized) }
         } else {
             emptyMap()
         }
@@ -150,7 +136,7 @@ internal class PluginCoverInterceptor(private val context: Context) : Intercepto
 private fun hostMatches(
     pattern: String,
     host: String,
-    records: PluginRecords,
+    records: HeaderValues,
     network: List<String>,
 ): Boolean {
     if (pattern.startsWith("{setting:") && pattern.endsWith("}")) {
@@ -180,16 +166,17 @@ internal fun networkReaches(network: List<String>, host: String): Boolean {
     return false
 }
 
-private fun settingHost(records: PluginRecords, key: String): String? {
+private fun settingHost(records: HeaderValues, key: String): String? {
     val raw = records.setting(key).trim()
     if (raw.isEmpty()) return null
     val withScheme = if ("://" in raw) raw else "https://$raw"
     return runCatching { Uri.parse(withScheme).host }.getOrNull()?.lowercase()
 }
 
-private val placeholder = Regex("\\{(setting|storage):([^{}]+)}")
+// Android's ICU rejects an unescaped "}". Desktop Java accepts it.
+private val placeholder = Regex("""\{(setting|storage):([^{}]+)\}""")
 
-private fun substitute(template: String, records: PluginRecords): String {
+private fun substitute(template: String, records: HeaderValues): String {
     var missing = false
     val filled = placeholder.replace(template) { match ->
         val value = when (match.groupValues[1]) {
@@ -203,7 +190,7 @@ private fun substitute(template: String, records: PluginRecords): String {
     return filled
 }
 
-private fun storageText(records: PluginRecords, key: String): String {
+private fun storageText(records: HeaderValues, key: String): String {
     return when (val hit = records.storageGet(key)) {
         Stored.Missing -> ""
         is Stored.Present -> when (val value = hit.value) {
@@ -213,5 +200,85 @@ private fun storageText(records: PluginRecords, key: String): String {
             else -> ""
         }
     }
+}
+
+/**
+ * Picture rules for every installed plugin. Coil asks once per cover while
+ * the list is on screen, so the directories are read once and kept until a
+ * package, setting, or storage value changes.
+ */
+internal object PluginHeaderCache {
+    private const val TAG = "Mygomusic"
+    private val lock = Any()
+    private val loadLock = Any()
+    private var version = 0
+    private var cachedVersion = -1
+    private var cached: List<CachedRules> = emptyList()
+
+    fun invalidate() = synchronized(lock) { version++ }
+
+    fun headers(context: Context, url: String): Map<String, String> {
+        for (plugin in rules(context)) {
+            val headers = PluginCovers.headerMap(
+                plugin.rules,
+                plugin.values,
+                url,
+                "image",
+                plugin.network,
+            )
+            if (headers.isNotEmpty()) return headers
+        }
+        return emptyMap()
+    }
+
+    private fun rules(context: Context): List<CachedRules> {
+        synchronized(lock) {
+            if (cachedVersion == version) return cached
+        }
+        synchronized(loadLock) {
+            val seen = synchronized(lock) {
+                if (cachedVersion == version) return cached
+                version
+            }
+            val fresh = read(context)
+            synchronized(lock) {
+                if (version == seen) {
+                    cached = fresh
+                    cachedVersion = seen
+                    return cached
+                }
+            }
+            return fresh
+        }
+    }
+
+    private fun read(context: Context): List<CachedRules> {
+        val store = PluginStore(context)
+        val out = ArrayList<CachedRules>()
+        for (plugin in store.list(Locale.ROOT)) {
+            if (plugin.broken) continue
+            val manifest = try {
+                PluginManifest.read(store.packageDir(plugin.directoryName))
+            } catch (e: Exception) {
+                Log.w(TAG, "plugin ${plugin.directoryName}", e)
+                continue
+            }
+            if (manifest.headerRules.isEmpty()) continue
+            val values = try {
+                PluginRecords(store.dataDir(plugin.directoryName)).freeze()
+            } catch (e: Exception) {
+                Log.w(TAG, "plugin ${plugin.directoryName}", e)
+                continue
+            }
+            out.add(CachedRules(manifest.headerRules, manifest.network, values))
+        }
+        return out
+    }
+
+    private class CachedRules(
+        val rules: List<PluginHeaderRule>,
+        val network: List<String>,
+        val values: HeaderValues,
+    )
 }
 

@@ -125,6 +125,7 @@ class PluginLyricsTest {
             "b",
             """{"id":"b","permissions":{"network":["*"]},"requestHeaders":[{"hosts":["img.example.com"],"headers":{"Cookie":"from-b"}}]}""",
         )
+        PluginHeaderCache.invalidate()
         val headers = PluginCovers.pluginImageHeaders(context, "https://img.example.com/a.jpg")
         assertEquals("from-b", headers["Cookie"])
     }
@@ -160,6 +161,30 @@ class PluginLyricsTest {
         } finally {
             server.shutdown()
         }
+    }
+
+    @Test
+    fun imageHeadersFollowSettingAndStorageChanges() {
+        val context = RuntimeEnvironment.getApplication() as Context
+        writePlugin(
+            context,
+            "tok",
+            """{"id":"tok","permissions":{"network":["*"]},"requestHeaders":[{"hosts":["{setting:server}"],"headers":{"Cookie":"t={storage:token}"}}]}""",
+        )
+        val records = PluginRecords(File(context.filesDir, "mygomusic/data/tok"))
+        records.setSetting("server", "https://covers.example/")
+        records.storageSet("token", "one")
+        assertEquals(
+            "t=one",
+            PluginCovers.pluginImageHeaders(context, "https://covers.example/a.jpg")["Cookie"],
+        )
+        records.storageSet("token", "two")
+        assertEquals(
+            "t=two",
+            PluginCovers.pluginImageHeaders(context, "https://covers.example/a.jpg")["Cookie"],
+        )
+        records.setSetting("server", "https://other.example/")
+        assertTrue(PluginCovers.pluginImageHeaders(context, "https://covers.example/a.jpg").isEmpty())
     }
 
     private fun writePlugin(context: Context, id: String, json: String) {

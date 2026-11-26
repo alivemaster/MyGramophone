@@ -32,44 +32,82 @@ internal sealed interface Stored {
     class Present(val value: Any?) : Stored
 }
 
+/** The setting and storage reads used when filling request headers. */
+internal interface HeaderValues {
+    fun setting(key: String): String
+    fun storageGet(key: String): Stored
+}
+
 /**
  * settings.json is an object of strings. storage.json is an object of JSON
  * values. Both live in the plugin data directory and stay when the package
  * is deleted.
  */
-internal class PluginRecords(private val dir: File) {
+internal class PluginRecords(private val dir: File) : HeaderValues {
     private val lock = lockFor(dir)
 
-    fun setting(key: String): String = synchronized(lock) {
-        when (val value = read(SETTINGS).opt(key)) {
-            is String -> value
-            null, JSONObject.NULL -> ""
-            else -> value.toString()
+    override fun setting(key: String): String = synchronized(lock) {
+        settingText(read(SETTINGS).opt(key))
+    }
+
+    fun setSetting(key: String, value: String) {
+        synchronized(lock) {
+            val root = read(SETTINGS)
+            root.put(key, value)
+            write(SETTINGS, root)
         }
+        PluginHeaderCache.invalidate()
     }
 
-    fun setSetting(key: String, value: String) = synchronized(lock) {
-        val root = read(SETTINGS)
-        root.put(key, value)
-        write(SETTINGS, root)
-    }
-
-    fun storageGet(key: String): Stored = synchronized(lock) {
+    override fun storageGet(key: String): Stored = synchronized(lock) {
         val root = read(STORAGE)
         if (!root.has(key)) return Stored.Missing
         return Stored.Present(jsonToJs(root.get(key)))
     }
 
-    fun storageSet(key: String, value: Any?) = synchronized(lock) {
-        val root = read(STORAGE)
-        root.put(key, pluginJson(value))
-        write(STORAGE, root)
+    fun storageSet(key: String, value: Any?) {
+        synchronized(lock) {
+            val root = read(STORAGE)
+            root.put(key, pluginJson(value))
+            write(STORAGE, root)
+        }
+        PluginHeaderCache.invalidate()
     }
 
-    fun storageRemove(key: String) = synchronized(lock) {
-        val root = read(STORAGE)
-        root.remove(key)
-        write(STORAGE, root)
+    fun storageRemove(key: String) {
+        synchronized(lock) {
+            val root = read(STORAGE)
+            root.remove(key)
+            write(STORAGE, root)
+        }
+        PluginHeaderCache.invalidate()
+    }
+
+    /** A copy that header filling can keep without reading this directory again. */
+    fun freeze(): HeaderValues = synchronized(lock) {
+        val settingsJson = read(SETTINGS)
+        val settings = buildMap {
+            val keys = settingsJson.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                put(key, settingText(settingsJson.opt(key)))
+            }
+        }
+        val storageJson = read(STORAGE)
+        val storage = buildMap {
+            val keys = storageJson.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                put(key, Stored.Present(jsonToJs(storageJson.get(key))))
+            }
+        }
+        FrozenRecords(settings, storage)
+    }
+
+    private fun settingText(value: Any?): String = when (value) {
+        is String -> value
+        null, JSONObject.NULL -> ""
+        else -> value.toString()
     }
 
     private fun read(name: String): JSONObject {
@@ -105,6 +143,15 @@ internal class PluginRecords(private val dir: File) {
             return locks.getOrPut(key) { Any() }
         }
     }
+}
+
+private class FrozenRecords(
+    private val settings: Map<String, String>,
+    private val storage: Map<String, Stored>,
+) : HeaderValues {
+    override fun setting(key: String): String = settings[key] ?: ""
+
+    override fun storageGet(key: String): Stored = storage[key] ?: Stored.Missing
 }
 
 internal fun jsonToJs(value: Any?): Any? = when (value) {
