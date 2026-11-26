@@ -40,6 +40,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.akanework.gramophone.BuildConfig
 import org.akanework.gramophone.logic.getFile
+import org.akanework.gramophone.mygomusic.PLUGIN_ALBUM_ID
+import org.akanework.gramophone.mygomusic.PLUGIN_ARTIST_ID
+import org.akanework.gramophone.mygomusic.PLUGIN_ARTIST_NAME
 import org.akanework.gramophone.logic.utils.exoplayer.EndedWorkaroundPlayer
 import uk.akane.libphonograph.items.EXTRA_ADD_DATE
 import uk.akane.libphonograph.items.EXTRA_ALBUM_ID
@@ -113,7 +116,7 @@ class LastPlayedManager(
                 data.mediaItems.map {
                     val b = SafeDelimitedStringConcat(":")
                     // add new entries at the bottom and remember they are null for upgrade path
-                    b.writeStringUnsafe("ver_" + 3)
+                    b.writeStringUnsafe("ver_" + 4)
                     b.writeStringSafe(it.mediaId)
                     b.writeUri(it.localConfiguration?.uri)
                     b.writeStringSafe(it.localConfiguration?.mimeType)
@@ -143,6 +146,9 @@ class LastPlayedManager(
                     b.writeStringSafe(it.mediaMetadata.cdTrackNumber)
                     b.writeUri(it.mediaMetadata.hdArtworkUri)
                     b.writeStringSafe(it.getFile()?.path)
+                    b.writeStringSafe(it.mediaMetadata.extras?.getString(PLUGIN_ARTIST_ID))
+                    b.writeStringSafe(it.mediaMetadata.extras?.getString(PLUGIN_ARTIST_NAME))
+                    b.writeStringSafe(it.mediaMetadata.extras?.getString(PLUGIN_ALBUM_ID))
                     b.toString()
                 })
             prefs.edit {
@@ -260,6 +266,9 @@ class LastPlayedManager(
                                     mediaId!!.substring("MediaStore:".length).toLong())
                                 it!!.toFile().path
                             }
+                            val pluginArtistId = if (version >= 4) b.readStringSafe() else null
+                            val pluginArtistName = if (version >= 4) b.readStringSafe() else null
+                            val pluginAlbumId = if (version >= 4) b.readStringSafe() else null
                             MediaItem.Builder()
                                 .setUri(uri)
                                 .setMediaId(mediaId!!)
@@ -305,6 +314,15 @@ class LastPlayedManager(
                                             }
                                             if (file != null) {
                                                 putString(EXTRA_FILE, file)
+                                            }
+                                            if (pluginArtistId != null) {
+                                                putString(PLUGIN_ARTIST_ID, pluginArtistId)
+                                            }
+                                            if (pluginArtistName != null) {
+                                                putString(PLUGIN_ARTIST_NAME, pluginArtistName)
+                                            }
+                                            if (pluginAlbumId != null) {
+                                                putString(PLUGIN_ALBUM_ID, pluginAlbumId)
                                             }
                                         })
                                         .build()

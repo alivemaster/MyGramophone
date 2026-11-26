@@ -8,10 +8,12 @@
         android:title="@string/add_to_queue" />
     <item
         android:id="@+id/add_to_playlist"
+        android:orderInCategory="200"
         android:title="@string/mygomusic_add_to_playlist"
         android:visible="false" />
     <item
         android:id="@+id/mygomusic_remove"
+        android:orderInCategory="200"
         android:title="@string/mygomusic_remove_from_playlist"
         android:visible="false" />
 </menu>

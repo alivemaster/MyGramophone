@@ -37,6 +37,13 @@ internal const val PLUGIN_RELEASED = "pluginReleased"
 /** Episode show id. Empty means the track is a song, so the heart uses like. */
 internal const val PLUGIN_SHOW = "pluginShow"
 
+/** The one artist named on the player. The player line has room for one person. */
+internal const val PLUGIN_ARTIST_ID = "pluginArtistId"
+internal const val PLUGIN_ARTIST_NAME = "pluginArtistName"
+
+/** Album opened from the song title on the player. */
+internal const val PLUGIN_ALBUM_ID = "pluginAlbumId"
+
 internal const val PLAY_SCHEME = "mygramophone"
 
 internal fun pluginMediaId(pluginId: String, trackId: String): String {
@@ -93,11 +100,17 @@ internal fun pluginLocale(context: Context): Locale {
     }
 }
 
+/** First credited artist who has a page. The player line shows this one name. */
+internal fun PluginTrack.playerArtist(): PluginPerson? {
+    return credits.firstOrNull { it.id.isNotEmpty() && it.name.isNotEmpty() }
+}
+
 internal fun PluginTrack.toMediaItem(pluginId: String): MediaItem {
+    val shown = playerArtist()
     // Both ids are percent-encoded so a ':' inside either one cannot split mediaId.
     val metadata = MediaMetadata.Builder()
         .setTitle(name)
-        .setArtist(artists.ifBlank { null })
+        .setArtist(shown?.name ?: artists.ifBlank { null })
         .setAlbumTitle(album.ifBlank { null })
         .setAlbumArtist(albumArtist.ifBlank { null })
         .setArtworkUri(imageUrl?.takeIf { it.isNotBlank() }?.toUri())
@@ -107,6 +120,11 @@ internal fun PluginTrack.toMediaItem(pluginId: String): MediaItem {
             val extras = Bundle()
             if (released.isNotEmpty()) extras.putString(PLUGIN_RELEASED, released)
             if (showId.isNotEmpty()) extras.putString(PLUGIN_SHOW, showId)
+            if (shown != null) {
+                extras.putString(PLUGIN_ARTIST_ID, shown.id)
+                extras.putString(PLUGIN_ARTIST_NAME, shown.name)
+            }
+            if (albumId.isNotEmpty()) extras.putString(PLUGIN_ALBUM_ID, albumId)
             if (!extras.isEmpty) setExtras(extras)
         }
         .build()

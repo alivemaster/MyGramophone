@@ -221,6 +221,30 @@ class PluginDataSourceTest {
     }
 
     @Test
+    fun playerNamesTheFirstArtistWhoHasAPage() {
+        val item = PluginTrack(
+            id = "t",
+            name = "Song",
+            artists = "A, B, C",
+            album = "Album",
+            imageUrl = null,
+            credits = listOf(
+                PluginPerson("", "A"),
+                PluginPerson("2", "B"),
+                PluginPerson("3", "C"),
+            ),
+            albumId = "al",
+        ).toMediaItem("demo")
+        assertEquals("B", item.mediaMetadata.artist.toString())
+        assertEquals("2", item.mediaMetadata.extras?.getString(PLUGIN_ARTIST_ID))
+        assertEquals("B", item.mediaMetadata.extras?.getString(PLUGIN_ARTIST_NAME))
+        assertEquals("al", item.mediaMetadata.extras?.getString(PLUGIN_ALBUM_ID))
+        val kept = item.withPluginHeart(true, false)
+        assertEquals("2", kept.mediaMetadata.extras?.getString(PLUGIN_ARTIST_ID))
+        assertEquals("al", kept.mediaMetadata.extras?.getString(PLUGIN_ALBUM_ID))
+    }
+
+    @Test
     fun episodeUsesShowIdAndHeartKeepsTheOtherFields() {
         val item = PluginTrack(
             id = "ep",

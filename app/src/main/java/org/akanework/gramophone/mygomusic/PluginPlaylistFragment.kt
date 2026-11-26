@@ -17,8 +17,10 @@
 
 package org.akanework.gramophone.mygomusic
 
+import android.content.Context
 import android.os.Bundle
 import android.view.LayoutInflater
+import android.view.Menu
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
@@ -88,7 +90,13 @@ class PluginPlaylistFragment : BaseFragment(null) {
         val token = requireArguments().getInt(ARG_TOKEN, 0)
         val cached = if (token != 0) cache.groups(token) else null
         if (cached != null) {
-            shown = PluginPage.Groups(titleArg(), cached, add = requireArguments().getBoolean(ARG_ADD))
+            shown = PluginPage.Groups(
+                titleArg(),
+                cached,
+                add = requireArguments().getBoolean(ARG_ADD),
+                artist = requireArguments().getBoolean(ARG_ARTIST),
+                album = requireArguments().getBoolean(ARG_ALBUM),
+            )
             render(shown!!)
         }
         return scaffold.root
@@ -114,6 +122,7 @@ class PluginPlaylistFragment : BaseFragment(null) {
         when (val open = row.open) {
             is Open.Playlist -> openSongs(PluginPlaylistDetailFragment.KIND_PLAYLIST, open.id, row.title, open)
             is Open.Album -> openSongs(PluginPlaylistDetailFragment.KIND_ALBUM, open.id, row.title, open)
+            is Open.Artist -> mainActivity.openPluginArtist(pluginId(), open.id, row.title)
             is Open.Show -> openSongs(PluginPlaylistDetailFragment.KIND_SHOW, open.id, row.title, open)
             Open.Liked -> openSongs(PluginPlaylistDetailFragment.KIND_LIKED, "", row.title, Open.Liked)
             is Open.Tracks -> openDetail(
@@ -122,6 +131,8 @@ class PluginPlaylistFragment : BaseFragment(null) {
                 row.title,
                 cache.putTracks(open.tracks),
                 add = pageAdd(),
+                artist = pageArtist(),
+                album = pageAlbum(),
             )
             is Open.Page -> openRemote(KIND_BROWSE, open.page, row.title) {
                 library.browse(pluginId(), open.page, row.title)
@@ -198,6 +209,9 @@ class PluginPlaylistFragment : BaseFragment(null) {
                         add = result.add,
                         remove = result.remove,
                         move = result.move,
+                        artist = result.artist,
+                        album = result.album,
+                        saved = savedArg(result.saved),
                     )
                     is PluginPage.Groups -> {
                         val token = cache.putGroups(result.groups)
@@ -208,10 +222,13 @@ class PluginPlaylistFragment : BaseFragment(null) {
                             putString(ARG_TITLE, result.title ?: title)
                             putInt(ARG_TOKEN, token)
                             putBoolean(ARG_ADD, result.add)
+                            putBoolean(ARG_ARTIST, result.artist)
+                            putBoolean(ARG_ALBUM, result.album)
                         }
                     }
                     is PluginPage.Account -> if (view != null) showPluginAccountDialog(requireActivity(), pluginId(), result)
                     is PluginPage.Message -> toast(result.text)
+                    is PluginPage.Artist -> toast(null)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -225,13 +242,21 @@ class PluginPlaylistFragment : BaseFragment(null) {
 
     private fun onTrackMenu(track: PluginTrack, anchor: View) {
         PopupMenu(requireContext(), anchor).showPluginTrackMenu(
+            context = requireContext(),
             add = pageAdd(),
             remove = false,
+            links = trackLinks(track, pageArtist(), pageAlbum()),
             onPlayNext = { PluginPlayback.playNext(mainActivity, pluginId(), listOf(track)) },
             onQueue = { PluginPlayback.enqueue(mainActivity, pluginId(), listOf(track)) },
             onAdd = { addTrack(track) },
             onRemove = {},
+            onLink = ::openLink,
         )
+    }
+
+    private fun openLink(link: TrackLink) {
+        if (link.artist) mainActivity.openPluginArtist(pluginId(), link.id, link.name)
+        else openSongs(PluginPlaylistDetailFragment.KIND_ALBUM, link.id, link.name, Open.Album(link.id))
     }
 
     private fun addTrack(track: PluginTrack) {
@@ -262,11 +287,21 @@ class PluginPlaylistFragment : BaseFragment(null) {
         }
     }
 
-    private fun pageAdd(): Boolean {
+    private fun pageAdd(): Boolean = pageFlag(PluginPage.Groups::add, PluginPage.Tracks::add, ARG_ADD)
+
+    private fun pageArtist(): Boolean = pageFlag(PluginPage.Groups::artist, PluginPage.Tracks::artist, ARG_ARTIST)
+
+    private fun pageAlbum(): Boolean = pageFlag(PluginPage.Groups::album, PluginPage.Tracks::album, ARG_ALBUM)
+
+    private fun pageFlag(
+        group: (PluginPage.Groups) -> Boolean,
+        tracks: (PluginPage.Tracks) -> Boolean,
+        arg: String,
+    ): Boolean {
         val page = shown
-        if (page is PluginPage.Groups) return page.add
-        if (page is PluginPage.Tracks) return page.add
-        return arguments?.getBoolean(ARG_ADD) == true
+        if (page is PluginPage.Groups) return group(page)
+        if (page is PluginPage.Tracks) return tracks(page)
+        return arguments?.getBoolean(arg) == true
     }
 
     private fun currentTitle(): String {
@@ -285,12 +320,15 @@ class PluginPlaylistFragment : BaseFragment(null) {
                             id,
                             page.title.ifEmpty { title },
                             cache.putTracks(page.tracks),
-                            add = page.add,
-                            remove = page.remove,
-                            move = page.move,
-                            mine = playlist?.mine == true,
-                            fixed = playlist?.fixed == true,
-                        )
+                        add = page.add,
+                        remove = page.remove,
+                        move = page.move,
+                        mine = playlist?.mine == true,
+                        fixed = playlist?.fixed == true,
+                        artist = page.artist,
+                        album = page.album,
+                        saved = savedArg(page.saved),
+                    )
                     }
                     is PluginPage.Account -> if (view != null) showPluginAccountDialog(requireActivity(), pluginId(), page)
                     is PluginPage.Message -> toast(page.text)
@@ -317,20 +355,26 @@ class PluginPlaylistFragment : BaseFragment(null) {
         move: Boolean = false,
         mine: Boolean = false,
         fixed: Boolean = false,
+        artist: Boolean = false,
+        album: Boolean = false,
+        saved: Int = -1,
     ) {
-        mainActivity.startFragment(PluginPlaylistDetailFragment()) {
-            putString(PluginPlaylistDetailFragment.ARG_PLUGIN, pluginId())
-            putString(PluginPlaylistDetailFragment.ARG_KIND, kind)
-            putString(PluginPlaylistDetailFragment.ARG_ID, id)
-            putString(PluginPlaylistDetailFragment.ARG_TITLE, title)
-            putInt(PluginPlaylistDetailFragment.ARG_TOKEN, token)
-            putString(PluginPlaylistDetailFragment.ARG_RELOAD, reload)
-            putBoolean(PluginPlaylistDetailFragment.ARG_ADD, add)
-            putBoolean(PluginPlaylistDetailFragment.ARG_REMOVE, remove)
-            putBoolean(PluginPlaylistDetailFragment.ARG_MOVE, move)
-            putBoolean(PluginPlaylistDetailFragment.ARG_MINE, mine)
-            putBoolean(PluginPlaylistDetailFragment.ARG_FIXED, fixed)
-        }
+        mainActivity.openPluginDetail(
+            pluginId = pluginId(),
+            kind = kind,
+            id = id,
+            title = title,
+            token = token,
+            reload = reload,
+            add = add,
+            remove = remove,
+            move = move,
+            mine = mine,
+            fixed = fixed,
+            artist = artist,
+            album = album,
+            saved = saved,
+        )
     }
 
     private fun playStation(id: String, title: String) {
@@ -453,6 +497,7 @@ class PluginPlaylistFragment : BaseFragment(null) {
             }
             is PluginPage.Account -> showPluginAccountDialog(requireActivity(), pluginId(), page)
             is PluginPage.Message -> showMessage(page.text)
+            is PluginPage.Artist -> showMessage(getString(R.string.mygomusic_empty))
         }
     }
 
@@ -494,6 +539,8 @@ class PluginPlaylistFragment : BaseFragment(null) {
         const val ARG_TITLE = "title"
         const val ARG_TOKEN = "token"
         const val ARG_ADD = "add"
+        const val ARG_ARTIST = "artist"
+        const val ARG_ALBUM = "album"
         const val KIND_ROOT = "root"
         const val KIND_BROWSE = "browse"
         const val KIND_ALBUMS = "albums"
@@ -503,32 +550,48 @@ class PluginPlaylistFragment : BaseFragment(null) {
 }
 
 internal fun PopupMenu.showPluginTrackMenu(
+    context: Context,
     add: Boolean,
     remove: Boolean,
+    links: List<TrackLink> = emptyList(),
     onPlayNext: () -> Unit,
     onQueue: () -> Unit,
     onAdd: () -> Unit,
     onRemove: () -> Unit,
+    onLink: (TrackLink) -> Unit = {},
 ) {
     inflate(R.menu.more_menu_less)
     menu.findItem(R.id.add_to_playlist).isVisible = add
     menu.findItem(R.id.mygomusic_remove).isVisible = remove
+    // One item per artist who has a page, then the album. A credit with no id is only a name.
+    links.forEachIndexed { index, link ->
+        val label = context.getString(
+            if (link.artist) R.string.mygomusic_go_to_artist else R.string.mygomusic_go_to_album,
+            link.name,
+        )
+        menu.add(Menu.NONE, TRACK_LINK + index, 100 + index, label)
+    }
     setOnMenuItemClickListener { item ->
-        when (item.itemId) {
-            R.id.play_next -> {
+        val linkIndex = item.itemId - TRACK_LINK
+        when {
+            item.itemId == R.id.play_next -> {
                 onPlayNext()
                 true
             }
-            R.id.add_to_queue -> {
+            item.itemId == R.id.add_to_queue -> {
                 onQueue()
                 true
             }
-            R.id.add_to_playlist -> {
+            item.itemId == R.id.add_to_playlist -> {
                 onAdd()
                 true
             }
-            R.id.mygomusic_remove -> {
+            item.itemId == R.id.mygomusic_remove -> {
                 onRemove()
+                true
+            }
+            linkIndex in links.indices -> {
+                onLink(links[linkIndex])
                 true
             }
             else -> false
@@ -536,6 +599,8 @@ internal fun PopupMenu.showPluginTrackMenu(
     }
     show()
 }
+
+private const val TRACK_LINK = 0x4D100000
 
 internal class PluginPageCache : ViewModel() {
     private var next = 1

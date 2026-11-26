@@ -603,6 +603,10 @@
     <string name="mygomusic_stations">電台</string>
     <string name="mygomusic_shows">播客</string>
     <string name="mygomusic_see_more">查看更多</string>
+    <string name="mygomusic_go_to_artist">查看歌手：%1$s</string>
+    <string name="mygomusic_go_to_album">查看專輯：%1$s</string>
+    <string name="mygomusic_follow">關注</string>
+    <string name="mygomusic_unfollow">取消關注</string>
     <string name="mygomusic_plugin_failed">外掛程式沒能列出這些內容。</string>
     <string name="mygomusic_playback">播放</string>
     <string name="mygomusic_quality">音質</string>

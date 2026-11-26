@@ -133,10 +133,15 @@ import org.akanework.gramophone.logic.utils.AudioFormatDetector.SpatialFormat
 import org.akanework.gramophone.logic.utils.CalculationUtils
 import org.akanework.gramophone.logic.utils.ColorUtils
 import org.akanework.gramophone.logic.utils.Flags
+import org.akanework.gramophone.mygomusic.PLUGIN_ALBUM_ID
+import org.akanework.gramophone.mygomusic.PLUGIN_ARTIST_ID
+import org.akanework.gramophone.mygomusic.PLUGIN_ARTIST_NAME
 import org.akanework.gramophone.mygomusic.PLUGIN_LIKE
 import org.akanework.gramophone.mygomusic.PLUGIN_LIKE_CODE
 import org.akanework.gramophone.mygomusic.PLUGIN_LIKE_MESSAGE
 import org.akanework.gramophone.mygomusic.PluginPage
+import org.akanework.gramophone.mygomusic.openPluginAlbum
+import org.akanework.gramophone.mygomusic.openPluginArtist
 import org.akanework.gramophone.mygomusic.parsePluginMediaId
 import org.akanework.gramophone.mygomusic.showPluginAccountDialog
 import org.akanework.gramophone.ui.MainActivity
@@ -365,9 +370,19 @@ class FullBottomSheet
         }
 
         bottomSheetFullTitle.setOnClickListener {
+            val item = instance?.currentMediaItem
+            val pluginId = item?.mediaId?.let { parsePluginMediaId(it) }?.first
+            if (item != null && pluginId != null) {
+                // A plugin album id is a string. The local album page only understands a MediaStore id.
+                val albumId = item.mediaMetadata.extras?.getString(PLUGIN_ALBUM_ID).orEmpty()
+                if (albumId.isEmpty()) return@setOnClickListener
+                minimize?.invoke()
+                activity.openPluginAlbum(pluginId, albumId, item.mediaMetadata.albumTitle?.toString().orEmpty())
+                return@setOnClickListener
+            }
             minimize?.invoke()
             activity.startFragment(GeneralSubFragment()) {
-                putString("Id", instance?.currentMediaItem?.mediaMetadata?.albumId?.toString())
+                putString("Id", item?.mediaMetadata?.albumId?.toString())
                 putInt("Item", R.id.album)
             }
         }
@@ -386,9 +401,19 @@ class FullBottomSheet
         }
 
         bottomSheetFullSubtitle.setOnClickListener {
+            val item = instance?.currentMediaItem
+            val pluginId = item?.mediaId?.let { parsePluginMediaId(it) }?.first
+            if (item != null && pluginId != null) {
+                val artistId = item.mediaMetadata.extras?.getString(PLUGIN_ARTIST_ID).orEmpty()
+                if (artistId.isEmpty()) return@setOnClickListener
+                val name = item.mediaMetadata.extras?.getString(PLUGIN_ARTIST_NAME).orEmpty()
+                minimize?.invoke()
+                activity.openPluginArtist(pluginId, artistId, name)
+                return@setOnClickListener
+            }
             minimize?.invoke()
             activity.startFragment(ArtistSubFragment()) {
-                putString("Id", instance?.currentMediaItem?.mediaMetadata?.artistId?.toString())
+                putString("Id", item?.mediaMetadata?.artistId?.toString())
                 putInt("Item", R.id.artist)
             }
         }

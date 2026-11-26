@@ -57,9 +57,16 @@ class GridPaddingDecoration(context: Context) : RecyclerView.ItemDecoration() {
             }
             throw IllegalStateException("can't find desired adapter?")
         }
-        if (adapter is BaseDecorAdapter<*> || adapter is DetailedFolderAdapter.FolderCardAdapter ||
-            adapter is PluginRowsAdapter
-        ) {
+        if (adapter is PluginRowsAdapter) {
+            if (!adapter.isCard(itemPosition)) return
+            val columns = CustomGridLayoutManager.FULL_SPAN_COUNT / adapter.spanSize()
+            if (columns <= 0) return
+            val column = adapter.cardColumn(itemPosition) % columns
+            if (column == columns - 1) outRect.right = mPadding
+            else if (column == 0) outRect.left = mPadding
+            return
+        }
+        if (adapter is BaseDecorAdapter<*> || adapter is DetailedFolderAdapter.FolderCardAdapter) {
             return
         }
         if (adapter !is BaseAdapter<*>) {

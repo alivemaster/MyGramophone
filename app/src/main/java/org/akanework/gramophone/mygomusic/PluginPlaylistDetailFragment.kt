@@ -23,7 +23,9 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
 import androidx.appcompat.widget.PopupMenu
+import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.ItemTouchHelper
 import kotlinx.coroutines.CancellationException
@@ -31,6 +33,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.akanework.gramophone.R
 import org.akanework.gramophone.logic.enableEdgeToEdgePaddingListener
+import org.akanework.gramophone.ui.MainActivity
 import org.akanework.gramophone.ui.fragments.BaseFragment
 
 /** Track page opened from a plugin row. Same shell as the local album and playlist page. */
@@ -42,6 +45,10 @@ class PluginPlaylistDetailFragment : BaseFragment(true) {
     private var canAdd = false
     private var canRemove = false
     private var canMove = false
+    private var canArtist = false
+    private var canAlbum = false
+    private var saved: Boolean? = null
+    private var saving = false
     private var moving = false
     private lateinit var scaffold: PluginScaffold
     private lateinit var rows: PluginRowsAdapter
@@ -75,10 +82,21 @@ class PluginPlaylistDetailFragment : BaseFragment(true) {
         scaffold.toolbar?.setNavigationOnClickListener {
             requireActivity().supportFragmentManager.popBackStack()
         }
+        scaffold.toolbar?.inflateMenu(R.menu.mygomusic_page_menu)
+        scaffold.toolbar?.menu?.findItem(R.id.mygomusic_follow)?.isVisible = false
+        scaffold.toolbar?.setOnMenuItemClickListener { item ->
+            if (item.itemId != R.id.mygomusic_save) return@setOnMenuItemClickListener false
+            toggleSaved()
+            true
+        }
         scaffold.refresh.setOnRefreshListener { load(force = true) }
         canAdd = requireArguments().getBoolean(ARG_ADD)
         canRemove = requireArguments().getBoolean(ARG_REMOVE)
         canMove = requireArguments().getBoolean(ARG_MOVE)
+        canArtist = requireArguments().getBoolean(ARG_ARTIST)
+        canAlbum = requireArguments().getBoolean(ARG_ALBUM)
+        saved = savedOf(requireArguments().getInt(ARG_SAVED, -1))
+        applySaved()
         val token = requireArguments().getInt(ARG_TOKEN, 0)
         val cached = if (token != 0) cache.tracks(token) else null
         if (cached != null) {
@@ -100,13 +118,54 @@ class PluginPlaylistDetailFragment : BaseFragment(true) {
 
     private fun onTrackMenu(track: PluginTrack, anchor: View) {
         PopupMenu(requireContext(), anchor).showPluginTrackMenu(
+            context = requireContext(),
             add = canAdd,
             remove = canRemove,
+            links = trackLinks(track, canArtist, canAlbum),
             onPlayNext = { PluginPlayback.playNext(mainActivity, pluginId(), listOf(track)) },
             onQueue = { PluginPlayback.enqueue(mainActivity, pluginId(), listOf(track)) },
             onAdd = { addTrack(track) },
             onRemove = { removeTrack(track) },
+            onLink = ::openLink,
         )
+    }
+
+    private fun openLink(link: TrackLink) {
+        if (link.artist) {
+            mainActivity.openPluginArtist(pluginId(), link.id, link.name)
+            return
+        }
+        openPluginAlbum(library, cache, pluginId(), link.id, link.name) { scaffold.refresh.isRefreshing = it }
+    }
+
+    private fun toggleSaved() {
+        val current = saved ?: return
+        val id = idArg()
+        if (saving || kind() != KIND_ALBUM || id.isEmpty()) return
+        saving = true
+        applySaved()
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                library.saveAlbum(pluginId(), id, !current)
+                if (view == null) return@launch
+                saved = !current
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (view != null) reportPluginCall(this@PluginPlaylistDetailFragment, pluginId(), e)
+            } finally {
+                saving = false
+                if (view != null) applySaved()
+            }
+        }
+    }
+
+    private fun applySaved() {
+        val item = scaffold.toolbar?.menu?.findItem(R.id.mygomusic_save) ?: return
+        val state = saved
+        item.isVisible = kind() == KIND_ALBUM && state != null
+        item.isEnabled = !saving
+        if (state != null) item.setTitle(if (state) R.string.mygomusic_unsave else R.string.mygomusic_save)
     }
 
     private fun addTrack(track: PluginTrack) {
@@ -201,6 +260,10 @@ class PluginPlaylistDetailFragment : BaseFragment(true) {
                     canAdd = page.add
                     canRemove = page.remove
                     canMove = page.move
+                    canArtist = page.artist
+                    canAlbum = page.album
+                    saved = page.saved
+                    applySaved()
                     tracks = page.tracks
                     if (page.title.isNotEmpty()) scaffold.collapsing?.title = page.title
                     showTracks(page.tracks)
@@ -210,7 +273,7 @@ class PluginPlaylistDetailFragment : BaseFragment(true) {
                     if (tracks == null) parentFragmentManager.popBackStack()
                 }
                 is PluginPage.Message -> showMessage(page.text)
-                is PluginPage.Groups -> showMessage(getString(R.string.mygomusic_empty))
+                is PluginPage.Groups, is PluginPage.Artist -> showMessage(getString(R.string.mygomusic_empty))
             }
         }
     }
@@ -233,7 +296,7 @@ class PluginPlaylistDetailFragment : BaseFragment(true) {
             else -> {
                 val reload = arguments?.getString(ARG_RELOAD).orEmpty()
                 if (reload.isNotEmpty()) library.browse(pluginId(), reload, title)
-                else PluginPage.Tracks(title, tracks ?: emptyList(), canAdd, canRemove, canMove)
+                else PluginPage.Tracks(title, tracks ?: emptyList(), canAdd, canRemove, canMove, canArtist, canAlbum, saved)
             }
         }
     }
@@ -275,10 +338,135 @@ class PluginPlaylistDetailFragment : BaseFragment(true) {
         const val ARG_MOVE = "move"
         const val ARG_MINE = "mine"
         const val ARG_FIXED = "fixed"
+        const val ARG_ARTIST = "artist"
+        const val ARG_ALBUM = "album"
+        const val ARG_SAVED = "saved"
         const val KIND_PLAYLIST = "playlist"
         const val KIND_ALBUM = "album"
         const val KIND_SHOW = "show"
         const val KIND_LIKED = "liked"
         const val KIND_GIVEN = "given"
+    }
+}
+
+internal fun MainActivity.openPluginDetail(
+    pluginId: String,
+    kind: String,
+    id: String,
+    title: String,
+    token: Int = 0,
+    reload: String = "",
+    add: Boolean = false,
+    remove: Boolean = false,
+    move: Boolean = false,
+    mine: Boolean = false,
+    fixed: Boolean = false,
+    artist: Boolean = false,
+    album: Boolean = false,
+    saved: Int = -1,
+) {
+    startFragment(PluginPlaylistDetailFragment()) {
+        putString(PluginPlaylistDetailFragment.ARG_PLUGIN, pluginId)
+        putString(PluginPlaylistDetailFragment.ARG_KIND, kind)
+        putString(PluginPlaylistDetailFragment.ARG_ID, id)
+        putString(PluginPlaylistDetailFragment.ARG_TITLE, title)
+        putInt(PluginPlaylistDetailFragment.ARG_TOKEN, token)
+        putString(PluginPlaylistDetailFragment.ARG_RELOAD, reload)
+        putBoolean(PluginPlaylistDetailFragment.ARG_ADD, add)
+        putBoolean(PluginPlaylistDetailFragment.ARG_REMOVE, remove)
+        putBoolean(PluginPlaylistDetailFragment.ARG_MOVE, move)
+        putBoolean(PluginPlaylistDetailFragment.ARG_MINE, mine)
+        putBoolean(PluginPlaylistDetailFragment.ARG_FIXED, fixed)
+        putBoolean(PluginPlaylistDetailFragment.ARG_ARTIST, artist)
+        putBoolean(PluginPlaylistDetailFragment.ARG_ALBUM, album)
+        putInt(PluginPlaylistDetailFragment.ARG_SAVED, saved)
+    }
+}
+
+/** Loads `album(id)` from the player and opens the track page. */
+internal fun MainActivity.openPluginAlbum(pluginId: String, id: String, title: String) {
+    if (id.isEmpty()) return
+    val library = PluginLibrary(this)
+    val cache = ViewModelProvider(this)[PluginPageCache::class.java]
+    lifecycleScope.launch {
+        try {
+            when (val page = library.songs(pluginId, Open.Album(id), title)) {
+                is PluginPage.Tracks -> openPluginDetail(
+                    pluginId = pluginId,
+                    kind = PluginPlaylistDetailFragment.KIND_ALBUM,
+                    id = id,
+                    title = page.title.ifEmpty { title },
+                    token = cache.putTracks(page.tracks),
+                    add = page.add,
+                    artist = page.artist,
+                    album = page.album,
+                    saved = savedArg(page.saved),
+                )
+                is PluginPage.Account -> showPluginAccountDialog(this@openPluginAlbum, pluginId, page)
+                is PluginPage.Message -> {
+                    val text = page.text.ifBlank { getString(R.string.mygomusic_plugin_failed) }
+                    Toast.makeText(this@openPluginAlbum, text, Toast.LENGTH_LONG).show()
+                }
+                else -> Unit
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            val call = e as? PluginCallException
+            if (call != null && (call.code == "signIn" || call.code == "setup")) {
+                showPluginAccountDialog(
+                    this@openPluginAlbum,
+                    pluginId,
+                    PluginPage.Account(call.code, call.message?.trim().orEmpty()),
+                )
+            } else {
+                val text = e.message?.ifBlank { null } ?: getString(R.string.mygomusic_plugin_failed)
+                Toast.makeText(this@openPluginAlbum, text, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+}
+
+/** Loads `album(id)` and opens the track page. The toolbar save state comes back with the album. */
+internal fun Fragment.openPluginAlbum(
+    library: PluginLibrary,
+    cache: PluginPageCache,
+    pluginId: String,
+    id: String,
+    title: String,
+    busy: (Boolean) -> Unit,
+) {
+    val host = activity as? MainActivity ?: return
+    viewLifecycleOwner.lifecycleScope.launch {
+        busy(true)
+        try {
+            when (val page = library.songs(pluginId, Open.Album(id), title)) {
+                is PluginPage.Tracks -> if (view != null) {
+                    host.openPluginDetail(
+                        pluginId = pluginId,
+                        kind = PluginPlaylistDetailFragment.KIND_ALBUM,
+                        id = id,
+                        title = page.title.ifEmpty { title },
+                        token = cache.putTracks(page.tracks),
+                        add = page.add,
+                        artist = page.artist,
+                        album = page.album,
+                        saved = savedArg(page.saved),
+                    )
+                }
+                is PluginPage.Account -> if (view != null) showPluginAccountDialog(requireActivity(), pluginId, page)
+                is PluginPage.Message -> if (view != null) {
+                    val text = page.text.ifBlank { getString(R.string.mygomusic_plugin_failed) }
+                    Toast.makeText(requireContext(), text, Toast.LENGTH_LONG).show()
+                }
+                else -> Unit
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            if (view != null) reportPluginCall(this@openPluginAlbum, pluginId, e)
+        } finally {
+            if (view != null) busy(false)
+        }
     }
 }

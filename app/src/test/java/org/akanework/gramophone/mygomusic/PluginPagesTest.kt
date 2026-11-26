@@ -17,8 +17,10 @@
 
 package org.akanework.gramophone.mygomusic
 
+import org.akanework.gramophone.ui.components.CustomGridLayoutManager
 import org.json.JSONArray
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -27,6 +29,24 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 class PluginPagesTest {
     private val caps = PluginCaps(rename = true, delete = true, save = true)
+
+    @Test
+    fun artistsAreRowsWhenThePluginOpensThem() {
+        val sections = JSONArray(
+            """[{"title":"Artists","artists":[{"id":"a","name":"A","imageUrl":"https://img/a"},{"id":"","name":"No page"}]}]""",
+        )
+        val skipped = mutableListOf<String>()
+        val rows = groupsFromSections(sections, "Home", caps.copy(artist = true), { "$it" }, "See more") { _, kind ->
+            skipped += kind
+        }.single().rows
+        assertTrue(skipped.isEmpty())
+        assertEquals(1, rows.size)
+        val artist = rows.single()
+        assertEquals("A", artist.title)
+        assertEquals("a", (artist.open as Open.Artist).id)
+        assertEquals("https://img/a", artist.imageUrl)
+        assertFalse(artist.menu.any)
+    }
 
     @Test
     fun trackSectionIsOneRowAndArtistsAreSkipped() {
@@ -159,6 +179,50 @@ class PluginPagesTest {
         val account = PluginPage.Account("signIn", "请先扫码登录网易云音乐")
         val page = rootPage(emptyList(), account, PluginPage.Message("failed"), PluginPage.Message("empty"))
         assertEquals(account, page)
+    }
+
+    @Test
+    fun trackMenuListsEveryArtistWithAPageThenTheAlbum() {
+        val tracks = parseTracks(
+            JSONArray(
+                """[{"id":"t","name":"Song","artists":[{"id":"1","name":"A"},{"id":"","name":"B"},{"id":"2","name":"C"}],"album":{"id":"al","name":"Album"}}]""",
+            ),
+        )
+        val track = tracks.single()
+        assertEquals("A, B, C", track.artists)
+        assertEquals("al", track.albumId)
+        assertEquals(
+            listOf("1", "2", "al"),
+            trackLinks(track, openArtist = true, openAlbum = true).map { it.id },
+        )
+        assertEquals(listOf(true, true, false), trackLinks(track, true, true).map { it.artist })
+        assertEquals(listOf("al"), trackLinks(track, openArtist = false, openAlbum = true).map { it.id })
+        assertTrue(trackLinks(track, openArtist = false, openAlbum = false).isEmpty())
+        val noAlbum = track.copy(albumId = "")
+        assertEquals(listOf("1", "2"), trackLinks(noAlbum, true, true).map { it.id })
+    }
+
+    @Test
+    fun savedArgRoundTripsTheAlbumToolbar() {
+        assertEquals(1, savedArg(true))
+        assertEquals(0, savedArg(false))
+        assertEquals(-1, savedArg(null))
+        assertEquals(true, savedOf(1))
+        assertEquals(false, savedOf(0))
+        assertEquals(null, savedOf(-1))
+        assertEquals(null, savedOf(4))
+    }
+
+    @Test
+    fun albumCardsUseTheAlbumGridAndTracksKeepAFullRow() {
+        assertEquals(CustomGridLayoutManager.GRID_PORTRAIT_SPAN_SIZE, pluginRowSpan(hasCards = true, lowWidth = true))
+        assertEquals(CustomGridLayoutManager.GRID_LANDSCAPE_SPAN_SIZE, pluginRowSpan(hasCards = true, lowWidth = false))
+        assertEquals(CustomGridLayoutManager.LIST_PORTRAIT_SPAN_SIZE, pluginRowSpan(hasCards = false, lowWidth = true))
+        assertEquals(CustomGridLayoutManager.LIST_LANDSCAPE_SPAN_SIZE, pluginRowSpan(hasCards = false, lowWidth = false))
+        assertFalse(pluginRowFullSpan(hasCards = true, card = true, bar = false))
+        assertTrue(pluginRowFullSpan(hasCards = true, card = false, bar = false))
+        assertTrue(pluginRowFullSpan(hasCards = false, card = false, bar = true))
+        assertFalse(pluginRowFullSpan(hasCards = false, card = false, bar = false))
     }
 
     @Test

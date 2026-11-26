@@ -23,6 +23,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.TextView
+import androidx.core.view.updateLayoutParams
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.appcompat.widget.TooltipCompat
 import androidx.fragment.app.Fragment
@@ -37,13 +38,15 @@ import coil3.request.error
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.color.MaterialColors
 import org.akanework.gramophone.R
+import org.akanework.gramophone.logic.ui.MyRecyclerView
 import org.akanework.gramophone.logic.ui.placeholderScaleToFit
 import org.akanework.gramophone.ui.MediaControllerViewModel
 import org.akanework.gramophone.ui.components.CustomGridLayoutManager
 import org.akanework.gramophone.ui.components.NowPlayingDrawable
 
 /**
- * Rows use [R.layout.adapter_list_card_larger]. The count bar is [R.layout.general_decor].
+ * Rows use [R.layout.adapter_list_card_larger]. Album cards on an artist page use
+ * [R.layout.adapter_grid_card]. The count bar is [R.layout.general_decor].
  * Song rows show the same now-playing mark as the local song list.
  */
 internal class PluginRowsAdapter(
@@ -55,15 +58,47 @@ internal class PluginRowsAdapter(
     private val onTrackMenu: (PluginTrack, View) -> Unit,
     private val onPlayAll: (List<PluginTrack>, Boolean) -> Unit,
     private val onCreate: () -> Unit,
-) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+) : MyRecyclerView.Adapter<RecyclerView.ViewHolder>() {
     private val context = fragment.requireContext()
     private var entries: List<Entry> = emptyList()
     private var tracks: List<PluginTrack> = emptyList()
+    private var cards = false
+    private var gridHeight = 0
+    private var coverPixels = PluginCovers.UNSPECIFIED_PIXELS
+    private var listView: MyRecyclerView? = null
     private var currentMediaItem: String? = null
     private var currentIsPlaying: Boolean? = null
 
     /** Long-press reorders tracks. Only an own, unfixed playlist that exports `movePlaylistTrack`. */
     var reorderEnabled: Boolean = false
+
+    override fun onAttachedToRecyclerView(recyclerView: MyRecyclerView) {
+        listView = recyclerView
+    }
+
+    override fun onDetachedFromRecyclerView(recyclerView: MyRecyclerView) {
+        if (listView === recyclerView) listView = null
+    }
+
+    override fun onWidthChanged(width: Int) {
+        val view = listView ?: return
+        val cardPadding = context.resources.getDimensionPixelSize(R.dimen.grid_card_side_padding)
+        val marginTop = context.resources.getDimensionPixelSize(R.dimen.grid_card_margin_top)
+        val marginLabel = context.resources.getDimensionPixelSize(R.dimen.grid_card_margin_label)
+        val paddingBottom = context.resources.getDimensionPixelSize(R.dimen.grid_card_padding_bottom)
+        val labelHeight = context.resources.getDimensionPixelSize(R.dimen.grid_card_label_height)
+        val columns = CustomGridLayoutManager.FULL_SPAN_COUNT / pluginRowSpan(hasCards = true, lowWidth())
+        var cover = width - view.paddingLeft - view.paddingRight - 2 * cardPadding
+        if (columns <= 0) return
+        cover /= columns
+        cover -= 2 * cardPadding
+        if (cover < 1) return
+        coverPixels = cover
+        val height = cover + marginTop + labelHeight + 2 * marginLabel + paddingBottom
+        if (height == gridHeight) return
+        gridHeight = height
+        if (cards) notifyDataSetChanged()
+    }
 
     fun observePlayer() {
         val players: MediaControllerViewModel by fragment.activityViewModels()
@@ -103,6 +138,7 @@ internal class PluginRowsAdapter(
     fun submitGroups(groups: List<PluginGroup>) {
         tracks = emptyList()
         reorderEnabled = false
+        cards = false
         val rows = groups.sumOf { it.rows.size }
         entries = buildList {
             if (rows > 0) add(Entry.Decor(rows, false))
@@ -124,6 +160,7 @@ internal class PluginRowsAdapter(
 
     fun submitTracks(list: List<PluginTrack>) {
         tracks = list
+        cards = false
         entries = buildList {
             if (list.isNotEmpty()) add(Entry.Decor(list.size, true))
             list.forEachIndexed { index, track -> add(Entry.Track(track, index, null, "")) }
@@ -131,26 +168,58 @@ internal class PluginRowsAdapter(
         notifyDataSetChanged()
     }
 
+    /** Albums from one `artist()` call, then that call's tracks. */
+    fun submitArtist(albums: List<PluginRow>, songs: List<PluginTrack>) {
+        tracks = songs
+        reorderEnabled = false
+        cards = albums.isNotEmpty()
+        entries = buildList {
+            if (albums.isNotEmpty()) {
+                add(Entry.Decor(albums.size, tracks = false, albums = true))
+                albums.forEach { add(Entry.Card(it)) }
+            }
+            if (songs.isNotEmpty()) {
+                add(Entry.Decor(songs.size, tracks = true))
+                songs.forEachIndexed { index, track ->
+                    add(Entry.Track(track, index, null, ""))
+                }
+            }
+        }
+        notifyDataSetChanged()
+    }
+
     fun clear() {
         entries = emptyList()
         tracks = emptyList()
+        cards = false
         reorderEnabled = false
         notifyDataSetChanged()
     }
 
-    fun spanSize(): Int {
-        val lowWidth = context.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT ||
-            context.resources.configuration.screenWidthDp < 600
-        return if (lowWidth) {
-            CustomGridLayoutManager.LIST_PORTRAIT_SPAN_SIZE
-        } else {
-            CustomGridLayoutManager.LIST_LANDSCAPE_SPAN_SIZE
-        }
-    }
+    fun spanSize(): Int = pluginRowSpan(cards, lowWidth())
 
     fun fullSpan(position: Int): Boolean {
         val entry = entries.getOrNull(position) ?: return true
-        return entry is Entry.Decor || entry is Entry.Header
+        return pluginRowFullSpan(cards, entry is Entry.Card, entry is Entry.Decor || entry is Entry.Header)
+    }
+
+    fun isCard(position: Int): Boolean = entries.getOrNull(position) is Entry.Card
+
+    /** Column of a card within its run, starting at 0. */
+    fun cardColumn(position: Int): Int {
+        var count = 0
+        var index = position
+        while (index >= 0 && entries.getOrNull(index) is Entry.Card) {
+            count++
+            index--
+        }
+        return (count - 1).coerceAtLeast(0)
+    }
+
+    private fun lowWidth(): Boolean {
+        val configuration = context.resources.configuration
+        return configuration.orientation == Configuration.ORIENTATION_PORTRAIT ||
+            configuration.screenWidthDp < 600
     }
 
     /** Track index at this adapter position, or -1 for a header or count bar. */
@@ -188,6 +257,7 @@ internal class PluginRowsAdapter(
     override fun getItemViewType(position: Int): Int = when (entries[position]) {
         is Entry.Decor -> R.layout.general_decor
         is Entry.Header -> R.layout.mygomusic_section
+        is Entry.Card -> R.layout.adapter_grid_card
         is Entry.Row, is Entry.Track -> R.layout.adapter_list_card_larger
     }
 
@@ -196,6 +266,7 @@ internal class PluginRowsAdapter(
         return when (viewType) {
             R.layout.general_decor -> DecorHolder(view)
             R.layout.mygomusic_section -> HeaderHolder(view)
+            R.layout.adapter_grid_card -> CardHolder(view)
             else -> RowHolder(view).also(::addRowRipple)
         }
     }
@@ -204,6 +275,7 @@ internal class PluginRowsAdapter(
         when (val entry = entries[position]) {
             is Entry.Decor -> bindDecor(holder as DecorHolder, entry)
             is Entry.Header -> (holder as HeaderHolder).title.text = entry.title
+            is Entry.Card -> bindCard(holder as CardHolder, entry.row)
             is Entry.Row -> bindRow(holder as RowHolder, entry.row)
             is Entry.Track -> bindTrack(holder as RowHolder, entry)
         }
@@ -217,6 +289,11 @@ internal class PluginRowsAdapter(
             (holder.nowPlaying.drawable as? NowPlayingDrawable)?.level2Done = null
             holder.nowPlaying.setImageDrawable(null)
             holder.nowPlaying.visibility = View.GONE
+            holder.cover.dispose()
+        }
+        if (holder is CardHolder) {
+            holder.itemView.setOnClickListener(null)
+            holder.itemView.setOnLongClickListener(null)
             holder.cover.dispose()
         }
         if (holder is DecorHolder) {
@@ -241,7 +318,11 @@ internal class PluginRowsAdapter(
         }
         holder.jumpUp.visibility = View.GONE
         holder.jumpDown.visibility = View.GONE
-        val plural = if (decor.tracks) R.plurals.songs else R.plurals.items
+        val plural = when {
+            decor.albums -> R.plurals.albums
+            decor.tracks -> R.plurals.songs
+            else -> R.plurals.items
+        }
         holder.counter.text = context.resources.getQuantityString(plural, decor.count, decor.count)
         holder.playAll.setOnClickListener { onPlayAll(tracks, false) }
         holder.shuffleAll.setOnClickListener { onPlayAll(tracks, true) }
@@ -253,7 +334,12 @@ internal class PluginRowsAdapter(
         holder.artist.text = row.subtitle
         rowText(holder, unavailable = false)
         holder.nowPlaying.visibility = View.GONE
-        loadCover(holder.cover, row.imageUrl, R.drawable.ic_default_cover_playlist)
+        val placeholder = if (row.open is Open.Artist) {
+            R.drawable.ic_default_cover_artist
+        } else {
+            R.drawable.ic_default_cover_playlist
+        }
+        loadCover(holder.cover, row.imageUrl, placeholder)
         val menu = row.menu.any && row.open !is Open.None
         holder.more.visibility = if (menu) View.VISIBLE else View.GONE
         holder.itemView.setOnClickListener { onRow(row) }
@@ -331,9 +417,27 @@ internal class PluginRowsAdapter(
         holder.itemView.foreground = AppCompatResources.getDrawable(context, value.resourceId)
     }
 
-    private fun loadCover(view: ImageView, url: String?, placeholder: Int) {
-        // About 40 pixels. The image loader adds this plugin's request headers.
-        view.load(PluginCovers.sized(url, PluginCovers.LIST_PIXELS)) {
+    private fun bindCard(holder: CardHolder, row: PluginRow) {
+        holder.title.text = row.title
+        holder.artist.text = row.subtitle
+        // Plugin albums do not carry a track count.
+        holder.count.text = ""
+        if (gridHeight > 0 && holder.itemView.layoutParams.height != gridHeight) {
+            holder.itemView.updateLayoutParams<ViewGroup.LayoutParams> { height = gridHeight }
+        }
+        loadCover(holder.cover, row.imageUrl, R.drawable.ic_default_cover, coverPixels)
+        holder.itemView.setOnClickListener { onRow(row) }
+        val menu = row.menu.any && row.open !is Open.None
+        holder.itemView.setOnLongClickListener {
+            if (!menu) return@setOnLongClickListener false
+            onRowMenu(row, it)
+            true
+        }
+    }
+
+    private fun loadCover(view: ImageView, url: String?, placeholder: Int, pixels: Int = PluginCovers.LIST_PIXELS) {
+        // The image loader adds this plugin's request headers and fills in {size}.
+        view.load(PluginCovers.sized(url, pixels)) {
             placeholderScaleToFit(placeholder)
             error(placeholder)
         }
@@ -351,9 +455,15 @@ internal class PluginRowsAdapter(
     }
 
     private sealed interface Entry {
-        data class Decor(val count: Int, val tracks: Boolean, val create: Boolean = false) : Entry
+        data class Decor(
+            val count: Int,
+            val tracks: Boolean,
+            val create: Boolean = false,
+            val albums: Boolean = false,
+        ) : Entry
         data class Header(val title: String) : Entry
         data class Row(val row: PluginRow) : Entry
+        data class Card(val row: PluginRow) : Entry
         /** [queue] null uses the track page's live list, which drag reorders. */
         data class Track(
             val track: PluginTrack,
@@ -375,6 +485,13 @@ internal class PluginRowsAdapter(
 
     private class HeaderHolder(view: View) : RecyclerView.ViewHolder(view) {
         val title: TextView = view.findViewById(R.id.title)
+    }
+
+    private class CardHolder(view: View) : RecyclerView.ViewHolder(view) {
+        val cover: ImageView = view.findViewById(R.id.cover)
+        val title: TextView = view.findViewById(R.id.title)
+        val artist: TextView = view.findViewById(R.id.artist)
+        val count: TextView = view.findViewById(R.id.track_count)
     }
 
     private class RowHolder(view: View) : RecyclerView.ViewHolder(view) {
@@ -449,4 +566,19 @@ internal class PluginTrackMoveCallback(
         dragTo = -1
         if (from >= 0 && to >= 0 && from != to) onMoved(from, to)
     }
+}
+
+/** Album cards use the local album grid. Elsewhere rows keep the list span. */
+internal fun pluginRowSpan(hasCards: Boolean, lowWidth: Boolean): Int = when {
+    hasCards && lowWidth -> CustomGridLayoutManager.GRID_PORTRAIT_SPAN_SIZE
+    hasCards -> CustomGridLayoutManager.GRID_LANDSCAPE_SPAN_SIZE
+    lowWidth -> CustomGridLayoutManager.LIST_PORTRAIT_SPAN_SIZE
+    else -> CustomGridLayoutManager.LIST_LANDSCAPE_SPAN_SIZE
+}
+
+/** On a card page, titles and tracks take the whole row so they do not sit beside a card. */
+internal fun pluginRowFullSpan(hasCards: Boolean, card: Boolean, bar: Boolean): Boolean {
+    if (card) return false
+    if (hasCards) return true
+    return bar
 }

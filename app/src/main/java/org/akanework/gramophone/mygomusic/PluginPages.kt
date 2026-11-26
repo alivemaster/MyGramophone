@@ -28,6 +28,12 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
 
+/** One person credited on a track or album. An empty [id] has a name and no page. */
+internal data class PluginPerson(
+    val id: String,
+    val name: String,
+)
+
 internal data class PluginTrack(
     val id: String,
     val name: String,
@@ -42,6 +48,10 @@ internal data class PluginTrack(
     val showId: String = "",
     /** The source already knows this track cannot be played. */
     val unavailable: Boolean = false,
+    /** Artists in the order the source credited them, including those with no page. */
+    val credits: List<PluginPerson> = emptyList(),
+    /** Album id. Empty when the source did not give this track an album page. */
+    val albumId: String = "",
 )
 
 internal data class PluginCaps(
@@ -51,6 +61,8 @@ internal data class PluginCaps(
     val save: Boolean,
     /** The source exports `createPlaylist`. */
     val create: Boolean = false,
+    /** The source exports `artist`, so an artist row has a page to open. */
+    val artist: Boolean = false,
 )
 
 /**
@@ -127,6 +139,7 @@ internal sealed interface Open {
     ) : Open
     data class Tracks(val tracks: List<PluginTrack>) : Open
     data class Album(val id: String) : Open
+    data class Artist(val id: String) : Open
     data class Show(val id: String) : Open
     data class Page(val page: String) : Open
     data object Albums : Open
@@ -166,6 +179,10 @@ internal sealed interface PluginPage {
         val account: Account? = null,
         /** Tracks opened from this page can be added to a playlist. */
         val add: Boolean = false,
+        /** Tracks on this page can open an artist page. */
+        val artist: Boolean = false,
+        /** Tracks on this page can open an album page. */
+        val album: Boolean = false,
     ) : PluginPage
     data class Tracks(
         val title: String,
@@ -173,6 +190,24 @@ internal sealed interface PluginPage {
         val add: Boolean = false,
         val remove: Boolean = false,
         val move: Boolean = false,
+        /** Tracks on this page can open an artist page. */
+        val artist: Boolean = false,
+        /** Tracks on this page can open an album page. */
+        val album: Boolean = false,
+        /**
+         * Null when this page cannot be saved. Otherwise whether the listener has saved the album.
+         */
+        val saved: Boolean? = null,
+    ) : PluginPage
+    data class Artist(
+        val title: String,
+        val albums: List<PluginRow>,
+        val tracks: List<PluginTrack>,
+        /** Null when the source has no `followArtist`. Otherwise whether the listener follows them. */
+        val following: Boolean?,
+        val add: Boolean = false,
+        val artist: Boolean = false,
+        val album: Boolean = false,
     ) : PluginPage
     data class Account(val code: String, val message: String) : PluginPage
     data class Message(val text: String) : PluginPage
@@ -238,7 +273,9 @@ internal fun groupsFromSections(
         }
         rows += albumRows(section.optJSONArray("albums"))
         val artists = section.optJSONArray("artists")
-        if (artists != null && artists.length() > 0) skip(title, "artists")
+        // An artist row opens artist(id). Without that export there is no page to open.
+        if (caps.artist) rows += artistRows(artists)
+        else if (artists != null && artists.length() > 0) skip(title, "artists")
         rows += playlistRows(section.optJSONArray("playlists"), caps, songs)
         rows += showRows(section.optJSONArray("shows"))
         rows += stationRows(section.optJSONArray("stations"))
@@ -296,6 +333,19 @@ private fun playlistRows(arr: JSONArray?, caps: PluginCaps, songs: (Int) -> Stri
         for (i in 0 until arr.length()) {
             val obj = arr.optJSONObject(i) ?: continue
             playlistRow(obj, caps, songs)?.let { add(it) }
+        }
+    }
+}
+
+private fun artistRows(arr: JSONArray?): List<PluginRow> {
+    if (arr == null) return emptyList()
+    return buildList {
+        for (i in 0 until arr.length()) {
+            val obj = arr.optJSONObject(i) ?: continue
+            val id = obj.str("id")
+            val name = obj.str("name")
+            if (id.isEmpty() || name.isEmpty()) continue
+            add(PluginRow(name, "", obj.str("imageUrl").ifEmpty { null }, Open.Artist(id), RowMenu()))
         }
     }
 }
@@ -362,33 +412,90 @@ internal fun parseTracks(arr: JSONArray?): List<PluginTrack> {
             if (id.isEmpty() || name.isEmpty()) continue
             val album = obj.optJSONObject("album")
             val image = obj.str("imageUrl").ifEmpty { album?.str("imageUrl").orEmpty() }.ifEmpty { null }
+            val credits = people(obj.optJSONArray("artists"))
             add(
                 PluginTrack(
                     id,
                     name,
-                    artistNames(obj.optJSONArray("artists")),
+                    artistNames(credits),
                     album?.str("name").orEmpty(),
                     image,
                     (obj.opt("duration") as? Number)?.toLong() ?: 0,
-                    artistNames(album?.optJSONArray("artists")),
+                    artistNames(people(album?.optJSONArray("artists"))),
                     album?.str("released").orEmpty(),
                     obj.str("showId"),
                     obj.bool("unavailable"),
+                    credits,
+                    album?.str("id").orEmpty(),
                 ),
             )
         }
     }
 }
 
-private fun artistNames(arr: JSONArray?): String {
-    if (arr == null) return ""
+private fun people(arr: JSONArray?): List<PluginPerson> {
+    if (arr == null) return emptyList()
     return buildList {
         for (i in 0 until arr.length()) {
-            val name = arr.optJSONObject(i)?.str("name").orEmpty()
-            if (name.isNotEmpty()) add(name)
+            val obj = arr.optJSONObject(i) ?: continue
+            val id = obj.str("id")
+            val name = obj.str("name")
+            if (id.isEmpty() && name.isEmpty()) continue
+            add(PluginPerson(id, name))
         }
-    }.joinToString(", ")
+    }
 }
+
+private fun artistNames(arr: JSONArray?): String = artistNames(people(arr))
+
+private fun artistNames(people: List<PluginPerson>): String {
+    return people.map { it.name }.filter { it.isNotEmpty() }.joinToString(", ")
+}
+
+/**
+ * Pages a track can open. One entry per credited artist who has an id, then its album.
+ * A name with no id has no page. Nothing is listed for a page the source did not export.
+ */
+internal fun trackLinks(track: PluginTrack, openArtist: Boolean, openAlbum: Boolean): List<TrackLink> {
+    return buildList {
+        if (openArtist) {
+            for (person in track.credits) {
+                if (person.id.isNotEmpty()) add(TrackLink(artist = true, person.id, person.name))
+            }
+        }
+        if (openAlbum && track.albumId.isNotEmpty()) {
+            add(TrackLink(artist = false, track.albumId, track.album))
+        }
+    }
+}
+
+/** Where a track menu item goes. [artist] false means the album. */
+internal data class TrackLink(val artist: Boolean, val id: String, val name: String)
+
+/** Passed through fragment arguments. -1 means this page has no save action. */
+internal fun savedArg(saved: Boolean?): Int = when (saved) {
+    true -> 1
+    false -> 0
+    null -> -1
+}
+
+internal fun savedOf(arg: Int): Boolean? = when (arg) {
+    1 -> true
+    0 -> false
+    else -> null
+}
+
+internal fun pageLinks(exports: Set<String>) = PageLinks(
+    add = "addToPlaylist" in exports,
+    artist = "artist" in exports,
+    album = "album" in exports,
+)
+
+internal data class PageLinks(
+    val add: Boolean = false,
+    val artist: Boolean = false,
+    val album: Boolean = false,
+)
 
 private fun JSONObject.str(key: String): String = opt(key) as? String ?: ""
 
@@ -412,6 +519,7 @@ internal class PluginLibrary(context: Context) {
                 is PluginPage.Message -> failure = page
                 is PluginPage.Groups -> groups += page.groups
                 is PluginPage.Tracks -> groups += PluginGroup(page.title, listOf(trackRow(page.title, page.tracks)))
+                is PluginPage.Artist -> Unit
             }
         }
         if ("playlists" in ctx.exports) {
@@ -426,7 +534,12 @@ internal class PluginLibrary(context: Context) {
             }
         }
         val page = rootPage(groups, account, failure, PluginPage.Message(app.getString(R.string.mygomusic_empty)))
-        if (page is PluginPage.Groups) page.copy(add = "addToPlaylist" in ctx.exports) else page
+        if (page is PluginPage.Groups) {
+            val links = pageLinks(ctx.exports)
+            page.copy(add = links.add, artist = links.artist, album = links.album)
+        } else {
+            page
+        }
     }
 
     suspend fun browse(pluginId: String, page: String, title: String): PluginPage = load(pluginId) { ctx ->
@@ -498,6 +611,30 @@ internal class PluginLibrary(context: Context) {
         it.runtime.call("removeFromPlaylist", mapOf("id" to id, "trackIds" to trackIds))
     }
 
+    suspend fun artist(pluginId: String, id: String, title: String): PluginPage = load(pluginId) { ctx ->
+        if ("artist" !in ctx.exports) return@load emptyPage()
+        val obj = asObject(ctx.runtime.call("artist", mapOf("id" to id)))
+        val person = obj.optJSONObject("artist")
+        val links = pageLinks(ctx.exports)
+        PluginPage.Artist(
+            title = person?.str("name").orEmpty().ifEmpty { title },
+            albums = albumRows(obj.optJSONArray("albums")),
+            tracks = parseTracks(obj.optJSONArray("tracks")),
+            following = if ("followArtist" in ctx.exports) person?.bool("following") == true else null,
+            add = links.add,
+            artist = links.artist,
+            album = links.album,
+        )
+    }
+
+    suspend fun follow(pluginId: String, id: String, on: Boolean) = act(pluginId) {
+        it.runtime.call("followArtist", mapOf("id" to id, "on" to on))
+    }
+
+    suspend fun saveAlbum(pluginId: String, id: String, on: Boolean) = act(pluginId) {
+        it.runtime.call("saveAlbum", mapOf("id" to id, "on" to on))
+    }
+
     suspend fun moveTrack(pluginId: String, id: String, from: Int, to: Int) = act(pluginId) {
         // Both indices are from the list before the move. `to` is where the track ends up.
         it.runtime.call("movePlaylistTrack", mapOf("id" to id, "from" to from, "to" to to))
@@ -530,7 +667,8 @@ internal class PluginLibrary(context: Context) {
         val obj = asObject(ctx.runtime.call("album", mapOf("id" to id)))
         val album = obj.optJSONObject("album")
         val tracks = parseTracks(obj.optJSONArray("tracks"))
-        listed(album?.str("name").orEmpty().ifEmpty { title }, tracks, ctx.exports)
+        val saved = if ("saveAlbum" in ctx.exports) album?.bool("saved") == true else null
+        listed(album?.str("name").orEmpty().ifEmpty { title }, tracks, ctx.exports, saved = saved)
     }
 
     private suspend fun show(pluginId: String, id: String, title: String): PluginPage = load(pluginId) { ctx ->
@@ -586,7 +724,8 @@ internal class PluginLibrary(context: Context) {
             return listed(rows[0].title.ifEmpty { title }, (rows[0].open as Open.Tracks).tracks, exports)
         }
         if (rows.isEmpty()) return emptyPage()
-        return PluginPage.Groups(title, groups, add = "addToPlaylist" in exports)
+        val links = pageLinks(exports)
+        return PluginPage.Groups(title, groups, add = links.add, artist = links.artist, album = links.album)
     }
 
     private fun listed(
@@ -596,9 +735,20 @@ internal class PluginLibrary(context: Context) {
         playlist: Boolean = false,
         mine: Boolean = false,
         fixed: Boolean = false,
+        saved: Boolean? = null,
     ): PluginPage.Tracks {
         val flags = trackPageFlags(playlist, mine, fixed, exports)
-        return PluginPage.Tracks(title, tracks, flags.add, flags.remove, flags.move)
+        val links = pageLinks(exports)
+        return PluginPage.Tracks(
+            title,
+            tracks,
+            flags.add,
+            flags.remove,
+            flags.move,
+            artist = links.artist,
+            album = links.album,
+            saved = saved,
+        )
     }
 
     private suspend fun paged(ctx: Ctx, export: String, extra: Map<String, Any?> = emptyMap(), read: (JSONObject) -> JSONArray): JSONArray {
@@ -631,6 +781,7 @@ internal class PluginLibrary(context: Context) {
         delete = "deletePlaylist" in exports,
         save = "savePlaylist" in exports,
         create = "createPlaylist" in exports,
+        artist = "artist" in exports,
     )
 
     private fun defaultNav() = listOf(

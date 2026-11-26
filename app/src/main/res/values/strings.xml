@@ -379,6 +379,14 @@
     <string name="mygomusic_stations">Radio</string>
     <string name="mygomusic_shows">Podcasts</string>
     <string name="mygomusic_see_more">See more</string>
+    <!-- Track menu. One item for each artist the song credits who has a page. %1$s is the name. -->
+    <string name="mygomusic_go_to_artist">Go to artist: %1$s</string>
+    <!-- Track menu. The album this song is on, when the plugin has album pages. %1$s is the name. -->
+    <string name="mygomusic_go_to_album">Go to album: %1$s</string>
+    <!-- Toolbar on an artist page, when the listener does not follow them. -->
+    <string name="mygomusic_follow">Follow</string>
+    <!-- Toolbar on an artist page, when the listener already follows them. -->
+    <string name="mygomusic_unfollow">Unfollow</string>
     <string name="mygomusic_plugin_failed">The plugin could not load this list.</string>
     <!-- Category on the plugin list for how plugin audio is requested -->
     <string name="mygomusic_playback">Playback</string>
