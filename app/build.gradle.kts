@@ -99,8 +99,8 @@ android {
         applicationId = appIdOverride ?: "org.akanework.gramophone"
         minSdk = 23
         targetSdk = 37
-        versionCode = 24
-        versionName = "1.1.2"
+        versionCode = 10001
+        versionName = "1.1.2-mg.1"
         if (releaseType != "Release" || vnos != null) {
             // by default the git commit hash is appended for non-release builds, however overrides
             // will apply unconditionally
@@ -250,7 +250,7 @@ kotlin {
 }
 
 base {
-    archivesName = "Gramophone-${android.defaultConfig.versionName}${android.defaultConfig.versionNameSuffix ?: ""}"
+    archivesName = "MyGramophone-${android.defaultConfig.versionName}${android.defaultConfig.versionNameSuffix ?: ""}"
 }
 
 baselineProfile {
