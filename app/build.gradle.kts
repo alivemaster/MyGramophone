@@ -47,14 +47,6 @@ android {
                 keyPassword = resolveProperties("AKANE_RELEASE_KEY_PASSWORD")
             }
         }
-        create("release2") {
-            if (resolveProperties("AKANE2_RELEASE_KEY_ALIAS")!= null) {
-                storeFile = file(resolveProperties("AKANE2_RELEASE_STORE_FILE")!!)
-                storePassword = resolveProperties("AKANE2_RELEASE_STORE_PASSWORD")
-                keyAlias = resolveProperties("AKANE2_RELEASE_KEY_ALIAS")
-                keyPassword = resolveProperties("AKANE2_RELEASE_KEY_PASSWORD")
-            }
-        }
     }
 
     androidResources {
@@ -129,11 +121,6 @@ android {
             "DISABLE_MEDIA_STORE_FILTER",
             "false"
         )
-        buildConfigField(
-            "boolean",
-            "IS_GOOGLEPLAY",
-            "false"
-        )
         vectorDrawables {
             useSupportLibrary = true
         }
@@ -148,26 +135,6 @@ android {
                 "proguard-rules.pro",
             )
             signingConfig = signingConfigs.getByName("release")
-        }
-        create("googlePlayRelease") {
-            isMinifyEnabled = true
-            isShrinkResources = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro",
-            )
-            signingConfig = signingConfigs.getByName("release2")
-            buildConfigField(
-                "boolean",
-                "IS_GOOGLEPLAY",
-                "true"
-            )
-            buildConfigField(
-                "String",
-                "RELEASE_TYPE",
-                "\"$releaseType-play\""
-            )
-            matchingFallbacks += "release"
         }
         create("benchmarkRelease") {
             isMinifyEnabled = true
@@ -226,9 +193,8 @@ android {
             it.vcsInfo {
                 include = false
             }
-            if (project.hasProperty("AKANE_RELEASE_KEY_ALIAS") || project.hasProperty("signing2")) {
-                it.signingConfig = signingConfigs[if (project.hasProperty("signing2"))
-                    "release2" else "release"]
+            if (project.hasProperty("AKANE_RELEASE_KEY_ALIAS")) {
+                it.signingConfig = signingConfigs["release"]
             }
             it.isCrunchPngs = false // for reproducible builds TODO how much size impact does this have? where are the pngs from? can we use webp?
         }
@@ -252,11 +218,6 @@ android {
         }
     }
 
-    // https://gitlab.com/IzzyOnDroid/repo/-/issues/491
-    dependenciesInfo {
-        includeInApk = false
-        includeInBundle = false
-    }
     testOptions.unitTests.isIncludeAndroidResources = true
     // Robolectric reflects into the JDK to install Android's FileDescriptor.
     // JDK 16+ hides jdk.internal.access unless the test JVM opens it.

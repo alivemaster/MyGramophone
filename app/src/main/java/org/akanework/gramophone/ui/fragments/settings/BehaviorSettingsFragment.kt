@@ -27,7 +27,6 @@ import androidx.preference.SwitchPreferenceCompat
 import org.akanework.gramophone.R
 import org.akanework.gramophone.logic.hasImagePermission
 import org.akanework.gramophone.logic.hasScopedStorageWithMediaTypes
-import org.akanework.gramophone.logic.utils.Flags
 import org.akanework.gramophone.ui.fragments.BasePreferenceFragment
 import org.akanework.gramophone.ui.fragments.BaseSettingsActivity
 
@@ -43,10 +42,7 @@ class BehaviorSettingsFragment : BasePreferenceFragment() {
         if (hasScopedStorageWithMediaTypes()) {
             val preference = findPreference<SwitchPreferenceCompat>("album_covers")!!
             preference.isPersistent = false
-            if (!Flags.REMOVE_IMAGE_PERMISSION)
-                preference.isChecked = requireContext().hasImagePermission()
-            else
-                preference.isVisible = false
+            preference.isChecked = requireContext().hasImagePermission()
         }
     }
 
@@ -60,8 +56,7 @@ class BehaviorSettingsFragment : BasePreferenceFragment() {
         }
         // Prior to Android 13, this changes a setting which changes MediaStoreUtils behaviour
         // Android 13 and later, this displays state of images permission granted/denied
-        if (hasScopedStorageWithMediaTypes() && !Flags.REMOVE_IMAGE_PERMISSION &&
-            preference.key == "album_covers") {
+        if (hasScopedStorageWithMediaTypes() && preference.key == "album_covers") {
             Toast.makeText(
                 requireActivity(), if (requireContext().hasImagePermission())
                     R.string.deny_images else R.string.grant_images, Toast.LENGTH_LONG

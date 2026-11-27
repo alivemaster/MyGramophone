@@ -18,7 +18,6 @@
 package org.akanework.gramophone.logic.utils
 
 import android.os.Build
-import org.akanework.gramophone.BuildConfig
 
 object Flags {
     const val TEST_RG_OFFLOAD = false // test only
@@ -30,7 +29,6 @@ object Flags {
     // (covers or lyrics) are not indexed, that with this on now must be indexed.
     // The hopefully uncontroversial part (using MediaStore for songs) is always enabled.
     val MEDIASTORE_IO = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
-    const val REMOVE_IMAGE_PERMISSION = BuildConfig.IS_GOOGLEPLAY
 
     // Before turning it on in prod we need i18n.
     const val FORMAT_INFO_DIALOG = true // TODO(ASAP)
