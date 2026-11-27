@@ -1,4 +1,4 @@
-# Gramophone
+# MyGramophone
 
 My Gramophone. A sane music player based on [Gramophone](https://github.com/FoedusProgramme/Gramophone), with [MyGo Music](https://github.com/egoist/mygo-music) plugin support.
 
@@ -21,4 +21,4 @@ Simply open your favorite text editor, type `releaseType=SelfBuilt`, and save it
 Launch Android Studio and import your own app signing signature. You should be able to build Gramophone now.
 
 ## License
-This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](https://github.com/alivemaster/MyGramophone/blob/beta/LICENSE) file for details.
+This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](https://github.com/alivemaster/MyGramophone/blob/master/LICENSE) file for details.
