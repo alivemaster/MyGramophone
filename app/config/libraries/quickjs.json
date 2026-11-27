@@ -1,0 +1,18 @@
+{
+  "uniqueId": "io.github.bellard:quickjs",
+  "developers": [{
+    "name": "Fabrice Bellard",
+    "organisationUrl": "https://bellard.org/quickjs/"
+  }, {
+    "name": "Charlie Gordon",
+    "organisationUrl": "https://bellard.org/quickjs/"
+  }],
+  "artifactVersion": "2025-09-13",
+  "description": "JavaScript engine compiled into quickjs-kt.",
+  "name": "QuickJS",
+  "tag": "custom",
+  "website": "https://github.com/bellard/quickjs",
+  "licenses": [
+    "MIT"
+  ]
+}

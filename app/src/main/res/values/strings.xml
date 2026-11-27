@@ -1222,6 +1222,8 @@
     <string name="add_to_playlist">Add to playlist</string>
     <!-- Error if no internet browser is installed but user clicks a link -->
     <string name="no_app_found">No app found that can do this</string>
+    <!-- Shown below this fork's maintainer in about screen -->
+    <string name="contributors_alivemaster">Maintainer of this fork</string>
     <!-- Shown below the lead developer's nickname in about screen -->
     <string name="contributors_nift4">Maintainer / Lead Developer</string>
     <!-- Shown below the lead designer's nickname in about screen -->

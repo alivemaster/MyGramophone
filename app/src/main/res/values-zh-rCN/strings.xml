@@ -359,6 +359,7 @@
     <string name="device_type_ble_headset">BLE 耳麦</string>
     <string name="rename">重命名</string>
     <string name="cannot_find_file">找不到该文件</string>
+    <string name="contributors_alivemaster">本分叉维护者</string>
     <string name="contributors_nift4">维护者/首席开发者</string>
     <string name="contributors_123duo3">首席设计师</string>
     <string name="contributors_akanetan">原作者、已退休开发者</string>

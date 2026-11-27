@@ -1,18 +1,17 @@
 import os
-import sys
 import requests
 from pathlib import Path
 from time import sleep
 from PIL import Image
 from io import BytesIO
 from typing import Optional
-import time
 import urllib.parse
 
 # Tuple of GitHub login ID to string resource ID
 # Use following command to get a rough idea who should be on this list:
 # git shortlog -n -s -- ':!app/src/main/res/values*/strings.xml' ':!fastlane/metadata/android/' ':!readme*.md'
 GITHUB_USERS = [
+    ("alivemaster", "contributors_alivemaster"),
     ("nift4", "contributors_nift4"),
     ("123Duo3", "contributors_123duo3"),
     ("AkaneTan", "contributors_akanetan"),
@@ -49,13 +48,13 @@ DRAWABLE_DIR = "app/src/main/res/drawable"
 OUTPUT_KT = "app/src/main/java/org/akanework/gramophone/logic/utils/data/Contributors.kt"
 API_BASE = "https://api.github.com/users/"
 WEBLATE_BASE = "https://hosted.weblate.org"
-WEBLATE_REPORTS = WEBLATE_BASE + "/api/reports/"
+# App string languages still shipped. English is the source language.
+TRANSLATION_LANGUAGES = ("zh_Hans", "zh_Hant", "ja")
+# Weblate Change.ACTIONS_CONTENT: the edits its credits report counts.
+CONTENT_ACTIONS = {2, 5, 6, 7, 8, 9, 27, 30, 31, 32, 36, 37, 66, 76, 77}
 
 HEADERS = {
     "Accept": "application/vnd.github+json",
-}
-WEBLATE_HEADERS = {
-    "Accept": "application/json",
 }
 
 try:
@@ -63,13 +62,6 @@ try:
         HEADERS["Authorization"] = "Bearer " + f.read().strip()
 except Exception as e:
     print("Not using auth, may be subject to rate limits")
-
-try:
-    with open("fastlane/weblate.txt", "r", encoding="utf-8") as f:
-        WEBLATE_HEADERS["Authorization"] = "Bearer " + f.read().strip()
-except Exception as e:
-    print("Missing weblate API key")
-    sys.exit(1)
 
 def sanitize_login(login: str) -> str:
     return ''.join(c if c.isalnum() else '_' for c in login.lower())
@@ -84,56 +76,38 @@ def fetch_user_data(login: str) -> Optional[dict]:
         print(f"❌ get users error {login}: {e}")
         return None
 
-def fetch_translation_credits() -> Optional[dict]:
+def fetch_translation_credits() -> Optional[list]:
+    """Usernames with content edits on the kept string languages.
+
+    The public changes API does not include display names. User profiles
+    are not readable without a token, so the about screen shows the
+    Weblate username from the change author.
+    """
     try:
-        # Step 1: Request report generation
-        response = requests.post(
-            WEBLATE_REPORTS,
-            headers=WEBLATE_HEADERS,
-            json={
-                "kind": "credits",
-                "project": "gramophone",
-                "start": "1970-01-01T00:00:00Z",
-                "end": "2099-01-01T00:00:00Z",
-            },
-            timeout=10,
-        )
-        response.raise_for_status()
-
-        task_url = WEBLATE_BASE + response.json()["task_url"]
-
-        # Step 2: Wait for task completion
-        for _ in range(30):  # ~30 seconds max
-            task = requests.get(
-                task_url,
-                headers=WEBLATE_HEADERS,
-                timeout=10,
+        names = set()
+        for code in TRANSLATION_LANGUAGES:
+            print(f"📦 Fetching {code} translators")
+            url = (
+                f"{WEBLATE_BASE}/api/translations/gramophone/strings-xml/"
+                f"{code}/changes/?page_size=1000"
             )
-            task.raise_for_status()
-
-            task_data = task.json()
-
-            if task_data.get("completed"):
-                break
-
-            time.sleep(1)
-        else:
-            print("❌ Timed out waiting for report generation")
-            return None
-
-        # Step 3: Find report URL
-        report_url = WEBLATE_BASE + task_data["result"]["url"]
-
-        # Step 4: Download report JSON
-        report = requests.get(
-            report_url + "json/",
-            headers=WEBLATE_HEADERS,
-            timeout=10,
-        )
-        report.raise_for_status()
-
-        return report.json()
-
+            while url:
+                response = requests.get(
+                    url,
+                    headers={"Accept": "application/json"},
+                    timeout=30,
+                )
+                response.raise_for_status()
+                page = response.json()
+                for item in page["results"]:
+                    if item.get("action") not in CONTENT_ACTIONS:
+                        continue
+                    author = item.get("author") or ""
+                    slug = urllib.parse.unquote(author.rstrip("/").rsplit("/", 1)[-1])
+                    if slug:
+                        names.add(slug)
+                url = page.get("next")
+        return sorted(names)
     except Exception as e:
         print(f"❌ get credits error: {e}")
         return None
@@ -182,17 +156,11 @@ object Contributors {
         result += f"\n        GitHubUser(login = \"{lname}\", link = {"true" if login else "false"}, name = decode({name}), avatar = R.drawable.{filename}, contributed = R.string.{user[1]}),"
 
     result += "\n    )\n"
-    print("📦 Fetching credits from Weblate")
-    credits = fetch_translation_credits()
-    if not credits:
+    print("📦 Fetching translators from Weblate")
+    names = fetch_translation_credits()
+    if not names:
         return
-    names = set()
-    for language in credits:
-        for users in language.values():
-            for user in users:
-                names.add(user["full_name"])
     result += "    val TRANSLATORS = listOf("
-    names = sorted(names)
     for name in names:
         result += "\n        decode(\"" + urllib.parse.quote(name) + "\"),"
     result += "\n    )\n}\n"

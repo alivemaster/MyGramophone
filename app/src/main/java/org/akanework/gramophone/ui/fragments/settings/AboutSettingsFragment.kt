@@ -75,7 +75,10 @@ class AboutSettingsFragment : BasePreferenceFragment() {
                 BuildConfig.VERSION_NAME
             val aboutTextView = rootView.findViewById<TextView>(R.id.about_text)!!
             aboutTextView.text = requireContext()
-                .getString(R.string.opensource_info, "© 2023-2026 AkaneTan, nift4 and contributors")
+                .getString(
+                    R.string.opensource_info,
+                    "© 2026 alivemaster; © 2023-2026 AkaneTan, nift4 and contributors"
+                )
         } else if (preference.key == "contributors") {
             startActivity(ContributorsSettingsActivity::class.java)
         } else if (preference.key == "package_type") {
@@ -89,6 +92,9 @@ class AboutSettingsFragment : BasePreferenceFragment() {
                 .setTitle(R.string.settings_open_source_licenses)
                 .setMessage(
                     """
+                        MyGramophone is a modified version of Gramophone.
+
+                        Copyright (C) 2026 alivemaster
                         Copyright (C) 2023-2024 AkaneTan
                         Copyright (C) 2023-2026 nift4
                         Copyright (C) 2024 The Gramophone authors

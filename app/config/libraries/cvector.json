@@ -1,0 +1,15 @@
+{
+  "uniqueId": "com.eteran:c-vector",
+  "developers": [{
+    "name": "Evan Teran",
+    "organisationUrl": "https://github.com/eteran"
+  }],
+  "artifactVersion": "774773d",
+  "description": "C dynamic array compiled into the quickjs-kt JNI bridge.",
+  "name": "c-vector",
+  "tag": "custom",
+  "website": "https://github.com/eteran/c-vector",
+  "licenses": [
+    "MIT"
+  ]
+}
