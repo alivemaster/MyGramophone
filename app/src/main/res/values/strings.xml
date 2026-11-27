@@ -366,7 +366,10 @@
     <string name="mygomusic_needs_setup">This plugin needs setting up first.</string>
     <string name="mygomusic_unsave">Remove from Saved</string>
     <string name="mygomusic_save">Save</string>
+    <!-- Dialog title when choosing which plugin playlist receives this track. -->
     <string name="mygomusic_add_to_playlist">Add to Playlist</string>
+    <!-- Track overflow menu. Opens that dialog. -->
+    <string name="mygomusic_add_to_playlist_menu">Add to Playlist…</string>
     <string name="mygomusic_remove_from_playlist">Remove from Playlist</string>
     <string name="mygomusic_new_playlist">New Playlist</string>
     <string name="mygomusic_new_playlist_item">New Playlist…</string>

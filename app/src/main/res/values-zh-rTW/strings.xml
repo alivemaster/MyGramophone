@@ -591,6 +591,7 @@
     <string name="mygomusic_unsave">取消收藏</string>
     <string name="mygomusic_save">收藏</string>
     <string name="mygomusic_add_to_playlist">添加到歌單</string>
+    <string name="mygomusic_add_to_playlist_menu">添加到歌單…</string>
     <string name="mygomusic_remove_from_playlist">從歌單中移除</string>
     <string name="mygomusic_new_playlist">新建歌單</string>
     <string name="mygomusic_new_playlist_item">新建歌單…</string>

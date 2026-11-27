@@ -9,7 +9,7 @@
     <item
         android:id="@+id/add_to_playlist"
         android:orderInCategory="200"
-        android:title="@string/mygomusic_add_to_playlist"
+        android:title="@string/mygomusic_add_to_playlist_menu"
         android:visible="false" />
     <item
         android:id="@+id/mygomusic_remove"
