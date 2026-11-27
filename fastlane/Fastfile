@@ -13,10 +13,6 @@ opt_out_usage
 default_platform(:android)
 
 platform :android do
-  def ensure_git_ok()
-    ensure_git_branch(branch: "beta")
-    ensure_git_status_clean
-  end
   def gradle_reproducible(options)
     gradle(flags: "--no-build-cache --no-daemon",
            system_properties: options[:system_properties],
@@ -30,43 +26,7 @@ platform :android do
 
   desc "Build release"
   lane :buildrel do
-    ensure_git_ok
-    
     gradle_reproducible(system_properties: {"org.gradle.project.releaseType": "Release"},
              task: ":app:assembleRelease")
-  end
-
-  desc "Build & push release to Git"
-  lane :gitrel do
-    buildrel
-    version = android_get_version_name(gradle_file: "app/build.gradle.kts")
-    set_github_release(
-      repository_name: "FoedusProgramme/Gramophone",
-      api_token: File.read("creds.txt"), # make sure it has no newline :D has to contain personal access token
-      name: "Gramophone #{version}",
-      tag_name: version,
-      is_draft: true,
-      is_generate_release_notes: true,
-      commitish: "beta",
-      upload_assets: [lane_context[SharedValues::GRADLE_APK_OUTPUT_PATH]]
-    )
-   end
-
-  desc "Prepare release"
-  lane :preprel do
-    ensure_git_ok
-    orig_version = android_get_version_name(gradle_file: "app/build.gradle.kts")
-    version = prompt(text: "Enter new version (current is #{orig_version})")
-    android_set_version_code(gradle_file: "app/build.gradle.kts")
-    android_set_version_name(version_name: version, gradle_file: "app/build.gradle.kts")
-    gradle_reproducible(system_properties: {"org.gradle.project.releaseType": "Release"},
-           task: ":app:generateReleaseBaselineProfile")
-    git_add(path: ["app/src/release/generated/baselineProfiles/baseline-prof.txt",
-                   "app/src/release/generated/baselineProfiles/startup-prof.txt"])
-    git_commit(path: ["app/build.gradle.kts",
-    "app/src/release/generated/baselineProfiles/baseline-prof.txt",
-    "app/src/release/generated/baselineProfiles/startup-prof.txt"], message: "Release #{version}")
-    gitrel
-    println(message: "Created draft release: #{lane_context[SharedValues::SET_GITHUB_RELEASE_HTML_LINK]}")
   end
 end

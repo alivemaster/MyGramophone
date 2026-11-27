@@ -29,23 +29,7 @@ Runs all the tests
 [bundle exec] fastlane android buildrel
 ```
 
-Build release
-
-### android gitrel
-
-```sh
-[bundle exec] fastlane android gitrel
-```
-
-Build & push release to Git
-
-### android preprel
-
-```sh
-[bundle exec] fastlane android preprel
-```
-
-Prepare release
+Build the release APK
 
 ----
 

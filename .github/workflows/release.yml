@@ -1,5 +1,7 @@
 name: Release
 
+# Push a version tag by hand after bumping versionName and versionCode.
+# This workflow signs the build and calls the same fastlane lane used locally.
 on:
   push:
     tags:
@@ -25,8 +27,11 @@ jobs:
           distribution: temurin
           cache: gradle
 
-      - name: Set release type
-        run: echo releaseType=Release > package.properties
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
 
       - name: Decode signing key
         run: |
@@ -38,12 +43,13 @@ jobs:
           echo "AKANE_RELEASE_KEY_PASSWORD=${{ secrets.KEY_PWD }}" >> ~/.gradle/gradle.properties
 
       - name: Build release APK
-        run: ./gradlew :app:assembleRelease
+        run: bundle exec fastlane android buildrel
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: MyGramophone ${{ github.ref_name }}
+          # Keep this true until a tag should become /releases/latest.
           prerelease: true
           generate_release_notes: true
           fail_on_unmatched_files: true
