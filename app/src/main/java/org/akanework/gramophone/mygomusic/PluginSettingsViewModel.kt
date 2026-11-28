@@ -57,6 +57,8 @@ data class PluginSettingsUi(
     val settings: List<PluginSetting> = emptyList(),
     val values: Map<String, String> = emptyMap(),
     val network: List<String> = emptyList(),
+    /** Programs named in permissions.process. This app does not run them. */
+    val process: List<String> = emptyList(),
     /** False until sign-in exports have been read. The row stays hidden until then. */
     val sessionReady: Boolean = false,
     /** The plugin exports sign-in, sign-out, or account. */
@@ -500,6 +502,7 @@ class PluginSettingsViewModel(app: Application) : AndroidViewModel(app) {
                 settings = settings,
                 values = settings.associate { it.key to records.setting(it.key) },
                 network = manifest.network,
+                process = manifest.process,
                 fromGithub = fromGithub,
             )
         } catch (e: Exception) {

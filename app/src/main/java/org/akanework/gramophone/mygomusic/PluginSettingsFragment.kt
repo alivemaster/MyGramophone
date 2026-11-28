@@ -23,7 +23,6 @@ import android.widget.CheckBox
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
-import androidx.core.os.ConfigurationCompat
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.fragment.app.viewModels
 import androidx.preference.DropDownPreference
@@ -194,8 +193,12 @@ class PluginSettingsFragment : BasePreferenceFragment() {
             }
         }
         val reach = note("reach", reachText(ui.network))
-        reach.order = position
+        reach.order = position++
         screen.addPreference(reach)
+        val programs = processText(ui.process) ?: return
+        val process = note("process", programs)
+        process.order = position
+        screen.addPreference(process)
     }
 
     private fun syncAccount(ui: PluginSettingsUi) {
@@ -227,10 +230,16 @@ class PluginSettingsFragment : BasePreferenceFragment() {
     private fun reachText(network: List<String>): String {
         if (network.isEmpty()) return getString(R.string.mygomusic_plugin_permission_network_none)
         if (network.any { it == "*" }) return getString(R.string.mygomusic_plugin_reach_any)
-        val language = ConfigurationCompat.getLocales(resources.configuration)[0]?.language
-        val separator = if (language.equals("zh", ignoreCase = true)) "、" else ", "
-        return getString(R.string.mygomusic_plugin_reach, network.joinToString(separator))
+        return getString(R.string.mygomusic_plugin_reach, joined(network))
     }
+
+    private fun processText(process: List<String>): String? {
+        if (process.isEmpty()) return null
+        if (process.any { it == "*" }) return getString(R.string.mygomusic_plugin_permission_process_any)
+        return getString(R.string.mygomusic_plugin_permission_process) + ": " + joined(process)
+    }
+
+    private fun joined(items: List<String>): String = items.joinToString(", ")
 
     private fun enableSwitch(on: Boolean): SwitchPreferenceCompat {
         return SwitchPreferenceCompat(requireContext()).apply {

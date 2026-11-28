@@ -294,9 +294,9 @@
     <string name="mygomusic_plugin_permission_network_any">Network: any host</string>
     <!-- Shown when the plugin does not ask for network access -->
     <string name="mygomusic_plugin_permission_network_none">No network access</string>
-    <!-- Last note on a plugin's settings. %1$s is the hosts it named, already joined -->
+    <!-- Note on a plugin's settings. %1$s is the hosts it named, already joined -->
     <string name="mygomusic_plugin_reach">Can reach %1$s</string>
-    <!-- Last note when the plugin may reach every host -->
+    <!-- Same note when the plugin may reach every host -->
     <string name="mygomusic_plugin_reach_any">Can reach any host</string>
     <!-- Process permission. This app does not run the listed programs. -->
     <string name="mygomusic_plugin_permission_process">This app will not run these programs</string>
