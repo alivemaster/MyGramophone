@@ -350,6 +350,7 @@ fun String.runCommand(
 }.standardOutput.asText.get().removeSuffixIfPresent("\n")
 
 fun readProperties(propertiesFile: File) = Properties().apply {
+    if (!propertiesFile.isFile) return@apply
     propertiesFile.inputStream().use { fis ->
         load(fis)
     }
