@@ -99,8 +99,8 @@ android {
         applicationId = appIdOverride ?: "org.akanework.gramophone"
         minSdk = 23
         targetSdk = 37
-        versionCode = 10001
-        versionName = "1.1.2-mg.1"
+        versionCode = 10002
+        versionName = "1.1.2-mg.2"
         if (releaseType != "Release" || vnos != null) {
             // by default the git commit hash is appended for non-release builds, however overrides
             // will apply unconditionally
