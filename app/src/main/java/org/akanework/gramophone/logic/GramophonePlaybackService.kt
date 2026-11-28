@@ -40,6 +40,7 @@ import android.os.Looper
 import android.os.Process
 import android.os.SystemClock
 import android.provider.MediaStore
+import android.widget.Toast
 import androidx.concurrent.futures.CallbackToFutureAdapter
 import androidx.core.app.NotificationChannelCompat
 import androidx.core.app.NotificationCompat
@@ -122,8 +123,10 @@ import org.akanework.gramophone.mygomusic.PluginCallException
 import org.akanework.gramophone.mygomusic.PluginDataSource
 import org.akanework.gramophone.mygomusic.PluginLikes
 import org.akanework.gramophone.mygomusic.PluginLyrics
-import org.akanework.gramophone.mygomusic.playUriUnavailable
-import org.akanework.gramophone.mygomusic.pluginUnavailable
+import org.akanework.gramophone.mygomusic.PLAY_SCHEME
+import org.akanework.gramophone.mygomusic.PluginTrackLoadPolicy
+import org.akanework.gramophone.mygomusic.pluginFailureText
+import org.akanework.gramophone.mygomusic.skipFailedPluginTrack
 import org.akanework.gramophone.mygomusic.parsePluginMediaId
 import org.akanework.gramophone.mygomusic.withPluginHeart
 import org.akanework.gramophone.logic.ui.MeiZuLyricsMediaNotificationProvider
@@ -222,6 +225,7 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
     @Volatile private var heartTrackId: String? = null
     @Volatile private var heartEpoch = 0
     private var unavailableSkips = 0
+    private var pluginFailureToast: Toast? = null
     lateinit var qb: QueueBoard
     private val sendLyrics = Runnable { scheduleSendingLyrics(false) }
     var lyrics: SemanticLyrics? = null
@@ -448,6 +452,7 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
                         it.setConstantBitrateSeekingEnabled(true)
                         it.setMp3ExtractorFlags(Mp3Extractor.FLAG_ENABLE_INDEX_SEEKING)
                     })
+                    .setLoadErrorHandlingPolicy(PluginTrackLoadPolicy())
             )
                 .setWakeMode(C.WAKE_MODE_LOCAL)
                 .setAudioAttributes(
@@ -1711,12 +1716,35 @@ class GramophonePlaybackService : MediaLibraryService(), MediaSessionService.Lis
     }
 
     override fun onPlayerError(error: PlaybackException) {
-        val current = endedWorkaroundPlayer?.exoPlayer?.currentMediaItem
-        val marked = current?.localConfiguration?.uri?.let { playUriUnavailable(it) } == true
-        if (marked || pluginUnavailable(error)) skipUnavailableTrack()
+        val uri = endedWorkaroundPlayer?.exoPlayer?.currentMediaItem?.localConfiguration?.uri
+        if (uri?.scheme != PLAY_SCHEME) return
+        showPluginFailure(error)
+        if (!skipFailedPluginTrack(uri, error)) return
+        Log.w(TAG, "plugin track failed", error)
+        skipUnavailableTrack()
     }
 
-    /** The source cannot play the current plugin track. Move on, and stop if none of the queue can. */
+    private fun showPluginFailure(error: Throwable) {
+        val notice = pluginFailureText(error)
+        val text = notice.message ?: getString(when (notice.code) {
+            "unavailable" -> R.string.mygomusic_track_unavailable
+            "signIn" -> R.string.mygomusic_needs_sign_in
+            "setup" -> R.string.mygomusic_needs_setup
+            else -> R.string.mygomusic_play_failed
+        })
+        handler.post {
+            val toast = pluginFailureToast
+            if (toast == null) {
+                pluginFailureToast = Toast.makeText(applicationContext, text, Toast.LENGTH_LONG).also { it.show() }
+            } else {
+                toast.setText(text)
+                toast.duration = Toast.LENGTH_LONG
+                toast.show()
+            }
+        }
+    }
+
+    /** This plugin track will not play. Move on, and stop if none of the queue can. */
     private fun skipUnavailableTrack() {
         val exo = endedWorkaroundPlayer?.exoPlayer ?: return
         val total = exo.mediaItemCount

@@ -364,6 +364,10 @@
     <string name="mygomusic_needs_sign_in">Sign in to see this.</string>
     <!-- Dialog text when setup is required and the plugin gave no message -->
     <string name="mygomusic_needs_setup">This plugin needs setting up first.</string>
+    <!-- Toast when a plugin track cannot be played and the plugin gave no sentence. -->
+    <string name="mygomusic_track_unavailable">This song isn\'t available</string>
+    <!-- Toast when a plugin track failed and the error had no sentence. -->
+    <string name="mygomusic_play_failed">Couldn\'t play this song</string>
     <string name="mygomusic_unsave">Remove from Saved</string>
     <string name="mygomusic_save">Save</string>
     <!-- Dialog title when choosing which plugin playlist receives this track. -->

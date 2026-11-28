@@ -174,6 +174,8 @@
     <string name="mygomusic_sign_in_qr">二维码</string>
     <string name="mygomusic_needs_sign_in">登录后才能查看。</string>
     <string name="mygomusic_needs_setup">这个插件需要先进行设置。</string>
+    <string name="mygomusic_track_unavailable">这首歌无法播放</string>
+    <string name="mygomusic_play_failed">无法播放这首歌</string>
     <string name="mygomusic_unsave">取消收藏</string>
     <string name="mygomusic_save">收藏</string>
     <string name="mygomusic_add_to_playlist">添加到歌单</string>

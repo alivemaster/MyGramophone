@@ -588,6 +588,8 @@
     <string name="mygomusic_sign_in_qr">二維條碼</string>
     <string name="mygomusic_needs_sign_in">登入後才能查看。</string>
     <string name="mygomusic_needs_setup">這個外掛程式需要先進行設定。</string>
+    <string name="mygomusic_track_unavailable">這首歌無法播放</string>
+    <string name="mygomusic_play_failed">無法播放這首歌</string>
     <string name="mygomusic_unsave">取消收藏</string>
     <string name="mygomusic_save">收藏</string>
     <string name="mygomusic_add_to_playlist">添加到歌單</string>

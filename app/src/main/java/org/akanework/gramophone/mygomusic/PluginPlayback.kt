@@ -22,10 +22,13 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.core.net.toUri
+import androidx.media3.common.C
 import androidx.media3.common.HeartRating
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
+import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import org.akanework.gramophone.logic.setMediaItemsSeamlessly
 import org.akanework.gramophone.logic.setMediaItemsWithTitle
 import org.akanework.gramophone.ui.MainActivity
@@ -69,6 +72,66 @@ internal fun playUri(pluginId: String, trackId: String, unavailable: Boolean = f
 
 /** The source marked this track unplayable. The queue still keeps it. */
 internal fun playUriUnavailable(uri: Uri): Boolean = uri.getQueryParameter("unavailable") == "1"
+
+/**
+ * A plugin track skips when playback throws, including an OkHttp timeout.
+ * signIn and setup stay: the listener has to act, and the next track fails
+ * the same way. A local file stays on its error.
+ */
+internal fun skipFailedPluginTrack(uri: Uri?, error: Throwable?): Boolean {
+    if (uri?.scheme != PLAY_SCHEME) return false
+    return !pluginAsksListener(error)
+}
+
+/**
+ * Words for the toast. [message] is what the plugin or the network said.
+ * [code] is set when that text is only a placeholder, so the app can use its own sentence.
+ */
+internal class PluginFailureText(val message: String?, val code: String?)
+
+internal fun pluginFailureText(error: Throwable?): PluginFailureText {
+    var current = error
+    val seen = HashSet<Throwable>()
+    var call: PluginCallException? = null
+    var thrown: String? = null
+    while (current != null && seen.add(current)) {
+        if (current is PluginCallException) call = current
+        val text = current.message?.trim()?.takeIf { it.isNotEmpty() && !placeholder(it) }
+        if (current !is PluginCallException && text != null) thrown = text
+        current = current.cause
+    }
+    val reported = call
+    val said = reported?.message?.trim()?.takeIf {
+        it.isNotEmpty() && !placeholder(it) && it != reported.code
+    }
+    if (said != null) return PluginFailureText(said, reported?.code)
+    if (reported != null) return PluginFailureText(null, reported.code.ifEmpty { null })
+    return PluginFailureText(thrown, null)
+}
+
+private fun placeholder(text: String): Boolean = text == "stream" || text == "Source error" || text == "unavailable"
+
+/** Plugin audio is not loaded again after it throws. The track is skipped from that error. */
+internal class PluginTrackLoadPolicy : DefaultLoadErrorHandlingPolicy() {
+    override fun getRetryDelayMsFor(loadErrorInfo: LoadErrorHandlingPolicy.LoadErrorInfo): Long {
+        if (loadErrorInfo.loadEventInfo.dataSpec.uri.scheme == PLAY_SCHEME) return C.TIME_UNSET
+        return super.getRetryDelayMsFor(loadErrorInfo)
+    }
+}
+
+private fun pluginAsksListener(error: Throwable?): Boolean {
+    var current = error
+    val seen = HashSet<Throwable>()
+    while (current != null && seen.add(current)) {
+        if (current is PluginCallException &&
+            (current.code == "signIn" || current.code == "setup")
+        ) {
+            return true
+        }
+        current = current.cause
+    }
+    return false
+}
 
 /** Path segments are decoded, so a slash inside an id survives as one segment. */
 internal fun parsePlayUri(uri: Uri): Pair<String, String>? {

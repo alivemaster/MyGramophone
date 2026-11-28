@@ -584,6 +584,8 @@
     <string name="mygomusic_sign_in_qr">QR コード</string>
     <string name="mygomusic_needs_sign_in">ログインすると表示できます。</string>
     <string name="mygomusic_needs_setup">このプラグインは、先に設定が必要です。</string>
+    <string name="mygomusic_track_unavailable">この曲は再生できません</string>
+    <string name="mygomusic_play_failed">この曲を再生できませんでした</string>
     <string name="mygomusic_unsave">保存を解除</string>
     <string name="mygomusic_save">保存</string>
     <string name="mygomusic_add_to_playlist">プレイリストに追加</string>

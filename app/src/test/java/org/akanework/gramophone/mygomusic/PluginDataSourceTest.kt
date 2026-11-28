@@ -19,7 +19,12 @@ package org.akanework.gramophone.mygomusic
 
 import android.net.Uri
 import androidx.core.net.toUri
+import androidx.media3.common.C
 import androidx.media3.common.HeartRating
+import androidx.media3.datasource.DataSpec
+import androidx.media3.exoplayer.source.LoadEventInfo
+import androidx.media3.exoplayer.source.MediaLoadData
+import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import okhttp3.Request
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -285,6 +290,39 @@ class PluginDataSourceTest {
         assertFalse(playUriUnavailable(tracks[0].toMediaItem("demo").localConfiguration!!.uri))
         assertTrue(pluginUnavailable(java.io.IOException("stream", PluginCallException("unavailable", "vip"))))
         assertFalse(pluginUnavailable(java.io.IOException("stream", PluginCallException("signIn", "in"))))
+        val blockedPlay = java.io.IOException("stream", PluginCallException("unavailable", "vip"))
+        val timedOut = java.io.IOException("read", java.net.SocketTimeoutException("timeout"))
+        val pluginFault = java.io.IOException("stream", PluginCallException("", "plugin failed"))
+        val network = java.net.UnknownHostException("cdn.example")
+        val signIn = java.io.IOException("stream", PluginCallException("signIn", "in"))
+        val setup = java.io.IOException("stream", PluginCallException("setup", "set"))
+        val pluginUri = tracks[0].toMediaItem("demo").localConfiguration!!.uri
+        assertTrue(skipFailedPluginTrack(pluginUri, blockedPlay))
+        assertTrue(skipFailedPluginTrack(pluginUri, timedOut))
+        assertTrue(skipFailedPluginTrack(pluginUri, pluginFault))
+        assertTrue(skipFailedPluginTrack(pluginUri, network))
+        assertFalse(skipFailedPluginTrack(pluginUri, signIn))
+        assertFalse(skipFailedPluginTrack(pluginUri, setup))
+        assertFalse(skipFailedPluginTrack("file:///music/a.flac".toUri(), network))
+        assertFalse(skipFailedPluginTrack("content://media/external/audio/media/3".toUri(), timedOut))
+        assertFalse(skipFailedPluginTrack(null, network))
+        assertEquals("vip", pluginFailureText(blockedPlay).message)
+        assertEquals("unavailable", pluginFailureText(blockedPlay).code)
+        assertEquals("timeout", pluginFailureText(timedOut).message)
+        assertEquals("plugin failed", pluginFailureText(pluginFault).message)
+        assertEquals("cdn.example", pluginFailureText(network).message)
+        assertEquals("in", pluginFailureText(signIn).message)
+        assertEquals("signIn", pluginFailureText(signIn).code)
+        assertEquals("set", pluginFailureText(setup).message)
+        val marked = java.io.IOException("stream", PluginCallException("unavailable", "unavailable"))
+        assertEquals(null, pluginFailureText(marked).message)
+        assertEquals("unavailable", pluginFailureText(marked).code)
+        val silentSignIn = java.io.IOException("stream", PluginCallException("signIn", ""))
+        assertEquals(null, pluginFailureText(silentSignIn).message)
+        assertEquals("signIn", pluginFailureText(silentSignIn).code)
+        val policy = PluginTrackLoadPolicy()
+        assertEquals(C.TIME_UNSET, policy.getRetryDelayMsFor(loadError(pluginUri)))
+        assertTrue(policy.getRetryDelayMsFor(loadError("file:///music/a.flac".toUri())) != C.TIME_UNSET)
     }
 
     @Test
@@ -304,4 +342,14 @@ class PluginDataSourceTest {
             PluginDataSource.readStream(mapOf("url" to "https://cdn.example/a", "type" to "wma"))
         }
     }
+}
+
+private fun loadError(uri: Uri): LoadErrorHandlingPolicy.LoadErrorInfo {
+    val spec = DataSpec.Builder().setUri(uri).build()
+    return LoadErrorHandlingPolicy.LoadErrorInfo(
+        LoadEventInfo.Builder(0, spec, 0).build(),
+        MediaLoadData(C.DATA_TYPE_MEDIA),
+        java.io.IOException("down"),
+        1,
+    )
 }
